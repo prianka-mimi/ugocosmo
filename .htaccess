@@ -1,0 +1,29 @@
+RewriteOptions inherit
+<IfModule mod_rewrite.c>
+# That was ONLY to protect you from 500 errors
+# if your server did not have mod_rewrite enabled
+
+RewriteEngine On
+# RewriteBase /
+# NOT needed unless you're using mod_alias to redirect
+
+RewriteCond %{REQUEST_URI} !/public
+RewriteRule ^(.*)$ public/$1 [L]
+# Direct all requests to /public folder
+
+</IfModule>
+
+# ─── Video Upload Limits ─────────────────────────────────────
+<IfModule mod_php.c>
+    php_value upload_max_filesize 200M
+    php_value post_max_size 210M
+    php_value max_execution_time 300
+    php_value max_input_time 300
+</IfModule>
+
+# Also apply when PHP runs as CGI/FastCGI
+<IfModule mod_suphp.c>
+    <Files ~ "\.php$">
+        SetEnv PHP_VALUE "upload_max_filesize = 200M\npost_max_size = 210M\nmax_execution_time = 300\nmax_input_time = 300"
+    </Files>
+</IfModule>

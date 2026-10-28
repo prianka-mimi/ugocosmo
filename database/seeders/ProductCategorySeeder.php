@@ -1,0 +1,155 @@
+<?php
+
+namespace Database\Seeders;
+
+use App\Models\ProductCategory;
+use Illuminate\Database\Seeder;
+
+class ProductCategorySeeder extends Seeder
+{
+    public function run(): void
+    {
+        $physicalCategories = [
+            'Mobile Phones',
+            'Mobile Phone Accessories',
+            'Computers & Laptops',
+            'Tablets & Accessories',
+            'Audio Equipment (Headphones, Speakers, Hi-Fi)',
+            'Cameras & Photography Equipment',
+            'Smart Home Devices',
+            'Wearable Technology',
+            'Other Electronics',
+            "Men's Clothing",
+            "Men's Shoes",
+            "Men's Accessories",
+            "Women's Clothing",
+            "Women's Shoes",
+            "Women's Bags & Accessories",
+            "Kids' Clothing",
+            'Baby Clothing & Accessories',
+            'Skincare Products',
+            'Haircare Products',
+            'Fragrances & Perfumes',
+            'Grooming Tools & Devices',
+            'Wellness & Personal Care Products',
+            'Beauty Accessories',
+            'Furniture',
+            'Home Décor & Accessories',
+            'Kitchen Appliances',
+            'Home Appliances',
+            'Bedding & Linen',
+            'Cleaning Appliances & Supplies',
+            'Gym & Fitness Equipment',
+            'Sportswear & Activewear',
+            'Outdoor & Camping Gear',
+            'Bicycles',
+            'Bicycle Parts & Accessories',
+            'Toys & Educational Toys',
+            'Board Games & Puzzles',
+            'Collectibles & Memorabilia',
+            'Musical Instruments',
+            'Arts, Crafts & Hobby Supplies',
+            'Car Accessories',
+            'Motorbike Accessories',
+            'Tools & Hardware',
+            'Car Care & Maintenance Products',
+            'Books (Physical)',
+            'Magazines',
+            'DVDs & Blu-ray',
+            'CDs & Vinyl Records',
+            'Handmade Crafts',
+            'Handmade Jewellery',
+            'Custom & Personalised Gifts',
+            'Artisan Home Décor',
+            'Vintage Clothing',
+            'Pre-Owned Electronics',
+            'Vintage Furniture',
+            'Collectibles & Antiques',
+            'Stationery',
+            'Office Equipment',
+            'Packaging & Shipping Supplies',
+            'Canned Foods',
+            'Dry Grains & Pasta',
+            'Baking Ingredients',
+            'Cereals & Oats',
+            'Snacks & Confectionery',
+            'Spices, Herbs & Seasonings',
+            'Sauces, Condiments & Spreads',
+            'Shelf-Stable Beverages',
+            'Cooking Oils & Vinegars',
+            'Long-Life Packaged Meals',
+            'Dried Fruits & Nuts',
+            'Shelf-Stable Dairy Alternatives',
+            'Analytical Instruments',
+            'Microscopes',
+            'Spectrophotometers',
+            'Chromatography Systems',
+            'pH Meters & Analyzers',
+            'Laboratory Balances',
+            'Centrifuges',
+            'Incubators',
+            'Water Baths',
+            'Shakers & Mixers',
+            'Glassware',
+            'Plasticware',
+            'Filtration Products',
+            'Non-Hazardous Reagents',
+            'PPE',
+            'Lab Refrigerators & Freezers',
+            'Fume Hoods & Cabinets',
+            'Manufacturing Machinery',
+            'CNC Machines',
+            'Welding Equipment',
+            'Pumps & Compressors',
+            'Industrial Tools',
+            'Material Handling Equipment',
+            'Industrial Electrical Systems',
+            'Construction Machinery',
+            'Concrete & Masonry Equipment',
+            'Lifting & Access Equipment',
+            'Power & Electrical Equipment',
+            'Cutting, Drilling & Demolition Tools',
+            'Surveying & Measurement Tools',
+            'Site Safety Equipment',
+            'Temporary Structures',
+            'Farm Machinery',
+            'Irrigation Systems',
+            'Livestock Equipment',
+            'Post-Harvest Equipment',
+            'Network Infrastructure',
+            'Telecom Hardware',
+            'Cabling & Connectivity',
+            'Consumer Telecom Devices',
+            'Metal Ores',
+            'Refined Metals',
+            'Industrial Minerals',
+            'Energy Commodities',
+            'Precious Metals',
+        ];
+
+        $digitalCategories = [
+            'Software & Licenses',
+            'E-Books & Digital Publications',
+            'Digital Art & Graphics',
+            'Audio & Music (Digital)',
+            'Video & Animations',
+            'Web Templates & Themes',
+            'Online Courses & Tutorials',
+            'Gaming Keys & Gift Cards',
+        ];
+
+        foreach ($physicalCategories as $category) {
+            ProductCategory::updateOrCreate(
+                ['name' => $category],
+                ['product_type' => 'physical', 'is_active' => true]
+            );
+        }
+
+        foreach ($digitalCategories as $category) {
+            ProductCategory::updateOrCreate(
+                ['name' => $category],
+                ['product_type' => 'digital', 'is_active' => true]
+            );
+        }
+    }
+}

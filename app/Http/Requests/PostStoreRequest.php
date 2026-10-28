@@ -1,0 +1,37 @@
+<?php
+
+namespace App\Http\Requests;
+
+use Illuminate\Foundation\Http\FormRequest;
+
+class PostStoreRequest extends FormRequest
+{
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    public function rules(): array
+    {
+        return [
+            'content' => ['nullable', 'required_without_all:image,video,media,gif_url,emoji', 'string', 'max:5000'],
+            'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:5120'],
+            'video' => ['nullable', 'file', 'mimes:mp4,mov,avi,wmv,flv,mkv'],
+            'media' => ['nullable', 'array'],
+            'media.*' => ['file', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:5120'],
+            'attached_item_type' => ['nullable', 'string', 'in:product,service,event,job_listing'],
+            'attached_item_id' => ['nullable', 'integer', 'required_with:attached_item_type'],
+            'gif_url' => ['nullable', 'string', 'url', 'max:1000'],
+            'emoji' => ['nullable', 'string', 'max:100'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'video.max' => 'The video file is too large. Maximum size is 200MB.',
+            'video.uploaded' => 'The video failed to upload. Please check the file size and try again.',
+            'content.required_without_all' => 'Either content, image, video, media, gif_url, or emoji must be present.',
+        ];
+    }
+}
