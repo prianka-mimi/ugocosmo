@@ -1,0 +1,283 @@
+name: Deploy project to our server
+
+on:
+  push:
+    branches:
+    - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    # ---------------------------------------------------------
+    # 1. Checkout latest code
+    # ---------------------------------------------------------
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # ---------------------------------------------------------
+    # 2. Install required deployment tools
+    # ---------------------------------------------------------
+    - name: Install Deployment Tools
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq lftp sshpass openssh-client
+
+    # ---------------------------------------------------------
+    # 3. Deploy project files through Rsync (Much Faster!)
+    # ---------------------------------------------------------
+    - name: Deploy Files via Rsync
+      env:
+        SFTP_SERVER: "51.24.145.175"
+        SFTP_USERNAME: "castilo-admin"
+        SFTP_PASSWORD: "Doris714916!"
+        SFTP_PATH: "htdocs/admin.castilo.co.uk/"
+      run: |
+        
+        echo "=========================================="
+        echo "Starting Rsync Deployment"
+        echo "=========================================="
+
+        # Using rsync with -c (checksum) so it ONLY uploads files that actually changed!
+        sshpass -p "$SFTP_PASSWORD" rsync -rlptvzc \
+          -e "ssh -o StrictHostKeyChecking=no" \
+          --exclude 'vendor/' \
+          --exclude 'node_modules/' \
+          --exclude '.env' \
+          --exclude '.git/' \
+          --exclude '.github/' \
+          --exclude 'tests/' \
+          --exclude '.deploy-cache/' \
+          --exclude 'storage/logs/' \
+          --exclude 'storage/framework/cache/*' \
+          --exclude 'storage/framework/sessions/*' \
+          --exclude 'storage/framework/views/*' \
+          --exclude 'README.md' \
+          --exclude 'phpunit.xml' \
+          --exclude 'docker-compose.yml' \
+          ./ "$SFTP_USERNAME@$SFTP_SERVER:$SFTP_PATH"
+
+        echo "=========================================="
+        echo "Rsync Upload Completed"
+        echo "=========================================="
+
+    # ---------------------------------------------------------
+    # 4. Calculate dependency hashes locally
+    #
+    # These hashes tell the server whether dependencies
+    # actually changed.
+    # ---------------------------------------------------------
+    - name: Calculate Dependency Hashes
+      id: hashes
+      shell: bash
+      run: |
+        
+        if [ -f composer.json ] || [ -f composer.lock ]; then
+          COMPOSER_HASH=$(
+            cat composer.json composer.lock 2>/dev/null \
+            | sha256sum \
+            | awk '{print $1}'
+          )
+        else
+          COMPOSER_HASH="none"
+        fi
+
+        if [ -f package.json ] || [ -f package-lock.json ]; then
+          NPM_HASH=$(
+            cat package.json package-lock.json 2>/dev/null \
+            | sha256sum \
+            | awk '{print $1}'
+          )
+        else
+          NPM_HASH="none"
+        fi
+
+        echo "composer_hash=$COMPOSER_HASH" >> "$GITHUB_OUTPUT"
+        echo "npm_hash=$NPM_HASH" >> "$GITHUB_OUTPUT"
+
+        echo "Composer hash: $COMPOSER_HASH"
+        echo "NPM hash: $NPM_HASH"
+
+    # ---------------------------------------------------------
+    # 4b. Clear Laravel config cache on server
+    # ---------------------------------------------------------
+    - name: Clear Config Cache
+      env:
+        SFTP_SERVER: "51.24.145.175"
+        SFTP_USERNAME: "castilo-admin"
+        SFTP_PASSWORD: "Doris714916!"
+        SFTP_PATH: "htdocs/admin.castilo.co.uk"
+      run: |
+        sshpass -p "$SFTP_PASSWORD" ssh \
+          -o StrictHostKeyChecking=no \
+          -o ConnectTimeout=20 \
+          "$SFTP_USERNAME@$SFTP_SERVER" \
+          "cd '$SFTP_PATH' && php artisan config:clear && echo 'Config cache cleared.'"
+
+    # ---------------------------------------------------------
+    # 5. Run deployment commands on server
+    # ---------------------------------------------------------
+    - name: Run Post Deployment Commands
+      env:
+        SFTP_SERVER: "51.24.145.175"
+        SFTP_USERNAME: "castilo-admin"
+        SFTP_PASSWORD: "Doris714916!"
+        SFTP_PATH: "htdocs/admin.castilo.co.uk/"
+        COMPOSER_HASH: ${{ steps.hashes.outputs.composer_hash }}
+        NPM_HASH: ${{ steps.hashes.outputs.npm_hash }}
+      run: |
+        
+        echo "=========================================="
+        echo "Starting Server-Side Deployment"
+        echo "=========================================="
+
+
+        sshpass -p "$SFTP_PASSWORD" ssh \
+          -o StrictHostKeyChecking=no \
+          -o ConnectTimeout=20 \
+          "$SFTP_USERNAME@$SFTP_SERVER" \
+          "cd '$SFTP_PATH' && \
+          export COMPOSER_HASH='$COMPOSER_HASH' && \
+          export NPM_HASH='$NPM_HASH' && \
+
+          # -------------------------------------------------
+          # Create deployment cache directory
+          # -------------------------------------------------
+          mkdir -p .deploy-cache && \
+
+          # -------------------------------------------------
+          # PHP / Composer dependencies
+          #
+          # composer install runs ONLY when:
+          # - vendor does not exist
+          # - composer dependency files changed
+          # -------------------------------------------------
+          if [ ! -d vendor ] || \
+             [ ! -f .deploy-cache/composer.hash ] || \
+             [ \"\$(cat .deploy-cache/composer.hash 2>/dev/null)\" != \"\$COMPOSER_HASH\" ]; then
+
+            echo '------------------------------------------'
+            echo 'Composer dependencies changed.'
+            echo 'Running composer install...'
+            echo '------------------------------------------'
+
+            composer install \
+              --no-dev \
+              --prefer-dist \
+              --optimize-autoloader \
+              --no-interaction \
+              --no-progress && \
+
+            echo \"\$COMPOSER_HASH\" > .deploy-cache/composer.hash
+
+          else
+
+            echo '------------------------------------------'
+            echo 'Composer dependencies unchanged.'
+            echo 'Skipping composer install.'
+            echo '------------------------------------------'
+
+          fi && \
+
+
+          # -------------------------------------------------
+          # Load NVM if available
+          # -------------------------------------------------
+          export NVM_DIR=\"\$HOME/.nvm\" && \
+
+          if [ -s \"\$NVM_DIR/nvm.sh\" ]; then
+            . \"\$NVM_DIR/nvm.sh\"
+          fi && \
+
+
+          # -------------------------------------------------
+          # Node dependencies
+          #
+          # npm ci runs ONLY when package files changed
+          # or node_modules does not exist.
+          # -------------------------------------------------
+          if [ ! -d node_modules ] || \
+             [ ! -f .deploy-cache/npm.hash ] || \
+             [ \"\$(cat .deploy-cache/npm.hash 2>/dev/null)\" != \"\$NPM_HASH\" ]; then
+
+            echo '------------------------------------------'
+            echo 'NPM dependencies changed.'
+            echo 'Running npm ci...'
+            echo '------------------------------------------'
+
+            npm ci \
+              --prefer-offline \
+              --no-audit \
+              --no-fund && \
+
+            echo \"\$NPM_HASH\" > .deploy-cache/npm.hash
+
+          else
+
+            echo '------------------------------------------'
+            echo 'NPM dependencies unchanged.'
+            echo 'Skipping npm ci.'
+            echo '------------------------------------------'
+
+          fi && \
+
+
+          # -------------------------------------------------
+          # Build frontend assets
+          # -------------------------------------------------
+          echo '------------------------------------------'
+          echo 'Building frontend assets...'
+          echo '------------------------------------------'
+
+          npm run build && \
+
+
+          # -------------------------------------------------
+          # Laravel optimization
+          # -------------------------------------------------
+          echo '------------------------------------------'
+          echo 'Optimizing Laravel...'
+          echo '------------------------------------------'
+
+          php artisan optimize && \
+
+          php artisan config:clear && \
+          php artisan route:clear && \
+          php artisan view:clear && \
+          php artisan cache:clear && \
+          php artisan optimize && \
+
+
+          # -------------------------------------------------
+          # Restart Laravel workers / Supervisor services
+          # -------------------------------------------------
+          echo '------------------------------------------'
+          echo 'Restarting Supervisor services...'
+          echo '------------------------------------------'
+
+          # Signal Laravel queue workers to reload gracefully
+          php artisan queue:restart || true
+
+          # Reread and update supervisor process definitions
+          sudo supervisorctl reread || true
+          sudo supervisorctl update || true
+
+          # Restart supervisor services with a timeout so deployment never hangs
+          timeout 15 sudo supervisorctl restart laravel-services:* 2>&1 || true
+
+
+          echo '=========================================='
+          echo 'Deployment Completed Successfully!'
+          echo '=========================================='
+        "
+
+    # ---------------------------------------------------------
+    # 6. Final success message
+    # ---------------------------------------------------------
+    - name: Deployment Successful
+      run: |
+        echo "=========================================="
+        echo "SUCCESS: Deployment finished successfully."
+        echo "=========================================="
