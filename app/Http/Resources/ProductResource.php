@@ -98,7 +98,9 @@ class ProductResource extends JsonResource
                     : (isset($src['is_free_shipping']) && $src['is_free_shipping'] ? 'Free Shipping' : '$0.00'),
                 'shipping_display' => 'Shipping: $'.number_format((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0), 2).', ETA: '.($this->estimated_delivery_time ?? $this->estimated_delivery ?? '10-15 business days'),
                 'is_free_shipping' => isset($src['is_free_shipping']) ? (bool) $src['is_free_shipping'] : ((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0) <= 0),
-                'carrier' => $src['carrier'] ?? 'AliExpress Standard Shipping',
+                'carrier' => (! empty($src['carrier']) && ! str_contains(strtolower((string) $src['carrier']), 'aliexpress'))
+                    ? (string) $src['carrier']
+                    : 'Standard Tracked Shipping',
                 'allowed_shipping_options' => [],
                 'available_shipping_options' => [],
                 'rate_selection_required' => false,

@@ -126,9 +126,9 @@ class CheckoutController extends Controller
                 $rates = [[
                     'rate_id'               => 'ae-fixed-rate-' . $product->id,
                     'carrier_id'            => 'aliexpress_standard',
-                    'carrier_friendly_name' => 'AliExpress Logistics',
+                    'carrier_friendly_name' => 'Standard Global Logistics',
                     'service_code'          => 'aliexpress_standard',
-                    'service_name'          => 'AliExpress Standard Shipping',
+                    'service_name'          => 'Standard Tracked Shipping',
                     'shipping_method'       => $canonical,
                     'shipping_amount'       => $cost,
                     'currency'              => 'USD',
