@@ -315,6 +315,7 @@ class CheckoutManager
                     'total' => $total,
                     'shipping_address' => $selectedAddress,
                     'tracking_number' => $trackingNumber,
+                    'purchase_reference' => $trackingNumber,
                     'selected_rate_id' => $selectedRateId,
                     'selected_carrier_id' => $selectedCarrierId,
                     'selected_carrier_code' => $selectedCarrierCode,

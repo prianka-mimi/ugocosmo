@@ -268,41 +268,176 @@ class OrderController extends Controller
                 throw new \Exception('Order cannot be cancelled after it has been shipped.', 422);
             }
 
-            if (in_array($order->status, ['cancelled', 'completed'], true)) {
-                throw new \Exception("Order is already {$order->status}.", 422);
-            }
+            $updatedOrder = $this->orderManager->cancelOrder($order, $profileId, $isBuyer);
 
-            DB::transaction(function () use ($order, $profileId, $isBuyer) {
-                $order->update(['status' => 'cancelled']);
-                $order->transaction?->update(['status' => 'cancelled']);
-
-                // Stripe refund if payment intent is present
-                $paymentIntentId = $order->stripe_payment_intent_id;
-                $refundResult = null;
-                if ($paymentIntentId && str_starts_with((string) $paymentIntentId, 'pi_')) {
-                    try {
-                        $stripe = app(StripeService::class);
-                        $refundResult = $stripe->refund($paymentIntentId, null, 'requested_by_customer');
-                    } catch (Throwable $refundEx) {
-                        Log::warning('Stripe auto-refund failed on order cancel: '.$refundEx->getMessage(), [
-                            'order_id' => $order->id,
-                            'payment_intent_id' => $paymentIntentId,
-                        ]);
-                        // Non-blocking: order is still cancelled; admin can refund manually
-                    }
-                }
-
-                Log::info('Order #'.$order->id.' cancelled by profile #'.$profileId.
-                    ($isBuyer ? ' (buyer)' : ' (seller)'));
-            });
-
-            $this->data = OrderResource::make($order->fresh()->load(['items', 'buyer', 'seller', 'transaction']));
+            $this->data = OrderResource::make($updatedOrder);
             $this->status_message = 'Order cancelled successfully.';
             $this->status_code = 200;
         } catch (Throwable $e) {
             Log::error('Order cancel error: '.$e->getMessage());
             $this->status_message = $e->getMessage();
-            $this->status_code = $e->getCode() ?: 500;
+            $code = (int) $e->getCode();
+            $this->status_code = ($code >= 400 && $code < 600) ? $code : 500;
+        }
+
+        return $this->JsonResponseFormat();
+    }
+
+    /**
+     * POST /api/orders/{order}/request-refund
+     *
+     * Buyer initiates a refund request for the order or a specific item.
+     */
+    public function requestRefund(Request $request, Order $order): JsonResponse
+    {
+        try {
+            $profile = Auth::guard('jwt')->user()->profile;
+            $validated = $request->validate([
+                'reason' => ['required', 'string', 'max:500'],
+                'description' => ['nullable', 'string', 'max:2000'],
+                'notes' => ['nullable', 'string', 'max:2000'],
+                'product_id' => ['nullable', 'integer', 'exists:products,id'],
+                'order_item_id' => ['nullable', 'integer', 'exists:order_items,id'],
+                'images' => ['nullable', 'array'],
+                'images.*' => ['string'],
+            ]);
+
+            $updatedOrder = $this->orderManager->requestRefund($order, $validated, (int) $profile->id);
+
+            $this->data = OrderResource::make($updatedOrder);
+            $this->status_message = 'Refund request submitted successfully to seller.';
+            $this->status_code = 200;
+        } catch (Throwable $e) {
+            Log::error('Refund request error: '.$e->getMessage());
+            $this->status_message = $e->getMessage();
+            $code = (int) $e->getCode();
+            $this->status_code = ($code >= 400 && $code < 600) ? $code : 400;
+        }
+
+        return $this->JsonResponseFormat();
+    }
+
+    /**
+     * POST /api/orders/{order}/approve-refund
+     *
+     * Seller reviews and approves buyer's refund/return request.
+     */
+    public function approveRefund(Request $request, Order $order): JsonResponse
+    {
+        try {
+            $profile = Auth::guard('jwt')->user()->profile;
+            $validated = $request->validate([
+                'notes' => ['nullable', 'string', 'max:1000'],
+                'return_instructions' => ['nullable', 'string', 'max:1000'],
+            ]);
+
+            $updatedOrder = $this->orderManager->approveRefund($order, $validated, (int) $profile->id);
+
+            $this->data = OrderResource::make($updatedOrder);
+            $this->status_message = 'Refund request approved. Waiting for buyer to return product.';
+            $this->status_code = 200;
+        } catch (Throwable $e) {
+            Log::error('Approve refund error: '.$e->getMessage());
+            $this->status_message = $e->getMessage();
+            $code = (int) $e->getCode();
+            $this->status_code = ($code >= 400 && $code < 600) ? $code : 400;
+        }
+
+        return $this->JsonResponseFormat();
+    }
+
+    /**
+     * POST /api/orders/{order}/reject-refund
+     *
+     * Seller reviews and rejects buyer's refund request.
+     */
+    public function rejectRefund(Request $request, Order $order): JsonResponse
+    {
+        try {
+            $profile = Auth::guard('jwt')->user()->profile;
+            $validated = $request->validate([
+                'reason' => ['required', 'string', 'max:500'],
+            ]);
+
+            $updatedOrder = $this->orderManager->rejectRefund($order, $validated, (int) $profile->id);
+
+            $this->data = OrderResource::make($updatedOrder);
+            $this->status_message = 'Refund request rejected.';
+            $this->status_code = 200;
+        } catch (Throwable $e) {
+            Log::error('Reject refund error: '.$e->getMessage());
+            $this->status_message = $e->getMessage();
+            $code = (int) $e->getCode();
+            $this->status_code = ($code >= 400 && $code < 600) ? $code : 400;
+        }
+
+        return $this->JsonResponseFormat();
+    }
+
+    /**
+     * POST /api/orders/{order}/ship-return
+     *
+     * Buyer returns/ships the approved product back to the seller.
+     */
+    public function shipReturn(Request $request, Order $order): JsonResponse
+    {
+        try {
+            $profile = Auth::guard('jwt')->user()->profile;
+            $validated = $request->validate([
+                'tracking_number' => ['nullable', 'string', 'max:255'],
+                'return_tracking_number' => ['nullable', 'string', 'max:255'],
+                'courier_name' => ['nullable', 'string', 'max:255'],
+                'carrier' => ['nullable', 'string', 'max:255'],
+                'notes' => ['nullable', 'string', 'max:1000'],
+            ]);
+
+            $updatedOrder = $this->orderManager->shipReturn($order, $validated, (int) $profile->id);
+
+            $this->data = OrderResource::make($updatedOrder);
+            $this->status_message = 'Return product shipment recorded. Waiting for seller to confirm receipt.';
+            $this->status_code = 200;
+        } catch (Throwable $e) {
+            Log::error('Ship return error: '.$e->getMessage());
+            $this->status_message = $e->getMessage();
+            $code = (int) $e->getCode();
+            $this->status_code = ($code >= 400 && $code < 600) ? $code : 400;
+        }
+
+        return $this->JsonResponseFormat();
+    }
+
+    /**
+     * POST /api/orders/{order}/confirm-return
+     *
+     * Seller confirms receipt of the returned product.
+     * Automatically disburses the refund money back to the buyer via Stripe and cancels escrow.
+     */
+    public function confirmReturn(Request $request, Order $order): JsonResponse
+    {
+        try {
+            $profile = Auth::guard('jwt')->user()->profile;
+            $validated = $request->validate([
+                'amount' => ['nullable', 'numeric', 'min:0.01'],
+                'reason' => ['nullable', 'string', 'in:duplicate,fraudulent,requested_by_customer'],
+            ]);
+
+            $result = $this->orderManager->processRefund($order, $validated, (int) $profile->id);
+
+            $this->data = [
+                'refund_id' => $result['refund_id'],
+                'amount' => $result['amount'],
+                'currency' => $result['currency'],
+                'status' => $result['status'],
+                'order_id' => $result['order_id'],
+                'order' => OrderResource::make($result['order']),
+            ];
+            $this->status_message = 'Return confirmed and refund disbursed successfully.';
+            $this->status_code = 200;
+        } catch (Throwable $e) {
+            Log::error('Confirm return error: '.$e->getMessage());
+            $this->status_message = $e->getMessage();
+            $code = (int) $e->getCode();
+            $this->status_code = ($code >= 400 && $code < 600) ? $code : 400;
         }
 
         return $this->JsonResponseFormat();
@@ -312,49 +447,26 @@ class OrderController extends Controller
      * POST /api/orders/{order}/refund
      *
      * Seller-initiated manual refund (full or partial) via Stripe.
-     * Does NOT change the order status — seller updates status separately if needed.
+     * Automatically completes the refund, updates statuses, cancels escrow, and notifies buyer.
      */
     public function refund(Request $request, Order $order): JsonResponse
     {
         try {
             $profile = Auth::guard('jwt')->user()->profile;
-            if ((int) $order->seller_id !== (int) $profile->id) {
-                throw new \Exception('Only the seller can issue a refund.', 403);
-            }
-
             $validated = $request->validate([
                 'amount' => ['nullable', 'numeric', 'min:0.01'],
                 'reason' => ['nullable', 'string', 'in:duplicate,fraudulent,requested_by_customer'],
             ]);
 
-            $paymentIntentId = $order->stripe_payment_intent_id;
-            if (! $paymentIntentId || ! str_starts_with((string) $paymentIntentId, 'pi_')) {
-                throw new \Exception('No Stripe PaymentIntent found for this order. Refund must be processed manually.', 422);
-            }
-
-            $amountCents = isset($validated['amount'])
-                ? (int) round((float) $validated['amount'] * 100)
-                : null;
-
-            $stripe = app(StripeService::class);
-            $refund = $stripe->refund(
-                $paymentIntentId,
-                $amountCents,
-                $validated['reason'] ?? 'requested_by_customer',
-            );
-
-            Log::info('Refund issued for Order #'.$order->id, [
-                'refund_id' => $refund['id'] ?? null,
-                'amount' => $refund['amount'] ?? null,
-                'status' => $refund['status'] ?? null,
-            ]);
+            $result = $this->orderManager->processRefund($order, $validated, (int) $profile->id);
 
             $this->data = [
-                'refund_id' => $refund['id'] ?? null,
-                'amount' => isset($refund['amount']) ? round($refund['amount'] / 100, 2) : (float) $order->total,
-                'currency' => strtoupper($refund['currency'] ?? 'usd'),
-                'status' => $refund['status'] ?? 'succeeded',
-                'order_id' => $order->id,
+                'refund_id' => $result['refund_id'],
+                'amount' => $result['amount'],
+                'currency' => $result['currency'],
+                'status' => $result['status'],
+                'order_id' => $result['order_id'],
+                'order' => OrderResource::make($result['order']),
             ];
             $this->status_message = 'Refund issued successfully.';
             $this->status_code = 200;

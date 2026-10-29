@@ -156,6 +156,11 @@ class Order extends Model
         return $this->hasMany(Dispute::class);
     }
 
+    public function escrowPayment(): HasOne
+    {
+        return $this->hasOne(EscrowPayment::class);
+    }
+
     public function shipments(): HasMany
     {
         return $this->hasMany(Shipment::class);
@@ -185,6 +190,11 @@ class Order extends Model
             'delivered',
             'completed',
             'cancelled',
+            'refund_requested',
+            'refund_approved',
+            'return_shipped',
+            'refund_rejected',
+            'refunded',
         ], true);
     }
 

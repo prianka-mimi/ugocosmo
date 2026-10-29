@@ -451,7 +451,16 @@ Route::middleware(['auth:jwt'])->group(function () {
         Route::get('/{order}/timeline', [OrderController::class, 'timeline']);      // Status history
         Route::post('/{order}/status', [OrderController::class, 'updateStatus']);
         Route::post('/{order}/cancel', [OrderController::class, 'cancel']);         // Buyer or seller cancel + auto-refund
-        Route::post('/{order}/refund', [OrderController::class, 'refund']);         // Seller manual partial/full refund
+        Route::post('/{order}/refund', [OrderController::class, 'refund']);         // Seller manual or direct partial/full refund
+
+        // ── Order Refund & Return Lifecycle ──
+        Route::post('/{order}/request-refund', [OrderController::class, 'requestRefund']);  // Buyer requests refund for product/order
+        Route::post('/{order}/refund-request', [OrderController::class, 'requestRefund']);  // Alias
+        Route::post('/{order}/approve-refund', [OrderController::class, 'approveRefund']);  // Seller approves refund request
+        Route::post('/{order}/reject-refund', [OrderController::class, 'rejectRefund']);    // Seller rejects refund request
+        Route::post('/{order}/ship-return', [OrderController::class, 'shipReturn']);        // Buyer returns product to seller
+        Route::post('/{order}/return-product', [OrderController::class, 'shipReturn']);     // Alias
+        Route::post('/{order}/confirm-return', [OrderController::class, 'confirmReturn']);  // Seller confirms receipt of return -> auto refunds money to buyer
     });
 
     // ─── Shipping ────────────────────────────────────────────────────

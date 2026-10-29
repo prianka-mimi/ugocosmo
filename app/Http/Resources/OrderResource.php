@@ -89,6 +89,26 @@ class OrderResource extends JsonResource
                 'status' => $this->transaction?->status,
                 'stripe_payment_id' => $this->transaction?->stripe_payment_id,
             ]),
+            'return_details' => $this->when(
+                in_array($this->status, ['refund_requested', 'refund_approved', 'refund_rejected', 'return_shipped', 'refunded'], true),
+                function () {
+                    $events = $this->relationLoaded('timelineEvents') ? $this->timelineEvents : $this->timelineEvents()->get();
+                    $lastRefundReq = $events->where('status', 'refund_requested')->last();
+                    $lastReturnShip = $events->where('status', 'return_shipped')->last();
+
+                    return [
+                        'status' => $this->status,
+                        'reason' => $lastRefundReq?->metadata['reason'] ?? $lastRefundReq?->notes,
+                        'notes' => $lastRefundReq?->metadata['notes'] ?? null,
+                        'refund_amount' => $lastRefundReq?->metadata['refund_amount'] ?? (float) $this->total,
+                        'product_id' => $lastRefundReq?->metadata['product_id'] ?? null,
+                        'order_item_id' => $lastRefundReq?->metadata['order_item_id'] ?? null,
+                        'return_tracking_number' => $lastReturnShip?->metadata['return_tracking_number'] ?? null,
+                        'return_courier' => $lastReturnShip?->metadata['return_courier'] ?? null,
+                        'requested_at' => $lastRefundReq?->created_at?->toIso8601String(),
+                    ];
+                }
+            ),
             'timeline' => OrderTimelineEventResource::collection($this->whenLoaded('timelineEvents')),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
