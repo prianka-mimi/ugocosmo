@@ -132,16 +132,16 @@ class ProductTextImprovementController extends Controller
                 }
             }
 
-            // Ensure at least one piece of context is provided (title, description, text, or reference image)
-            if (empty($title) && empty($description) && empty($text) && empty($attachments)) {
+            // Ensure at least one piece of context is provided (title, description, text, prompt override, or reference image)
+            if (empty($title) && empty($description) && empty($text) && empty($promptOverride) && empty($attachments)) {
                 throw ValidationException::withMessages([
-                    'title' => ['Please provide a product title, description, text, or reference image(s).'],
+                    'title' => ['Please provide a product title, description, text, prompt override, or reference image(s).'],
                 ]);
             }
 
             // Fallbacks in case AI generation fails or is unavailable
-            $fallbackTitle = $title ?? (in_array($type, ['title', 'name'], true) ? $text : ($text ?: 'Product Title'));
-            $fallbackDescription = $description ?? ($type === 'description' ? $text : ($text ?: 'Product Description'));
+            $fallbackTitle = $title ?? (in_array($type, ['title', 'name'], true) ? $text : ($text ?: ($promptOverride ?: 'Product Title')));
+            $fallbackDescription = $description ?? ($type === 'description' ? $text : ($text ?: ($promptOverride ?: 'Product Description')));
 
             // Construct contextual prompt for the AI agent
             $promptParts = ['Improve and expand the following product information into a high-converting title and rich description:'];
@@ -168,48 +168,67 @@ class ProductTextImprovementController extends Controller
                 $promptParts[] = "Custom User Instructions: {$promptOverride}";
             }
 
-            $promptParts[] = 'Requirements: Return an improved_title that is catchy and keyword-optimized, and an improved_description that is thorough, persuasive, and highlights key product benefits.';
+            $promptParts[] = 'Requirements: Return an improved_title that is catchy and keyword-optimized, and an improved_description that is thorough, persuasive, and highlights key product benefits. FORMATTING: Return PLAIN TEXT ONLY. DO NOT include any HTML tags (no <p>, <br>, <strong>, <ul>, <li>, <div>, etc.). Use clean line breaks and bullet symbols (•) for formatting.';
 
             $prompt = implode("\n\n", $promptParts);
+            Log::info('Generating product text with prompt: '.$prompt);
 
-            try {
-                $agent = new ProductTextImproverAgent;
-                /** @var \Laravel\Ai\Responses\StructuredAgentResponse|array $response */
-                $response = $agent->prompt($prompt, attachments: $attachments);
+            $cleanPlainText = static function (?string $text): string {
+                if (empty($text)) {
+                    return '';
+                }
+                // Convert block-level HTML tags and line breaks to plain newlines
+                $text = preg_replace('/<\s*\/\s*(p|div|tr|li|h[1-6])\s*>/i', "\n", $text);
+                $text = preg_replace('/<\s*br\s*\/?>/i', "\n", $text);
+$text = preg_replace('/<\s*li\s*>/i', '• ', $text);
+  $text = strip_tags($text);
+  $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+  $text = preg_replace("/\r\n|\r/", "\n", $text);
+  $text = preg_replace("/\n{3,}/", "\n\n", $text);
 
-                /** @var array<string, mixed> $aiResult */
-                $aiResult = method_exists($response, 'toArray')
-                    ? $response->toArray()
-                    : (is_array($response) ? $response : (json_decode((string) $response, true) ?? []));
+  return trim($text);
+  };
 
-                $improvedTitle = ! empty($aiResult['improved_title']) ? (string) $aiResult['improved_title'] : $fallbackTitle;
-                $improvedDescription = ! empty($aiResult['improved_description']) ? (string) $aiResult['improved_description'] : $fallbackDescription;
+  try {
+  $agent = new ProductTextImproverAgent;
+  /** @var \Laravel\Ai\Responses\StructuredAgentResponse|array $response */
+  $response = $agent->prompt($prompt, attachments: $attachments);
 
-                $message = 'Product text improved successfully';
-            } catch (Throwable $aiException) {
-                Log::warning('AI product text improvement failed. Fallback to original. Error: '.$aiException->getMessage());
+  /** @var array<string, mixed> $aiResult */
+    $aiResult = method_exists($response, 'toArray')
+    ? $response->toArray()
+    : (is_array($response) ? $response : (json_decode((string) $response, true) ?? []));
 
-                $improvedTitle = $fallbackTitle;
-                $improvedDescription = $fallbackDescription;
-                $message = 'AI enhancement unavailable or failed, returning original text.';
-            }
+    $improvedTitle = $cleanPlainText(! empty($aiResult['improved_title']) ? (string) $aiResult['improved_title'] :
+    $fallbackTitle);
+    $improvedDescription = $cleanPlainText(! empty($aiResult['improved_description']) ? (string)
+    $aiResult['improved_description'] : $fallbackDescription);
 
-            $this->data = [
-                'improved_title' => $improvedTitle,
-                'improved_description' => $improvedDescription,
-            ];
-            $this->status_message = $message;
-            $this->status_code = 200;
-        } catch (ValidationException $e) {
-            $this->status_message = $e->getMessage();
-            $this->status_code = 422;
-            $this->data = $e->errors();
-        } catch (Throwable $e) {
-            Log::error('Product text improve error: '.$e->getMessage());
-            $this->status_message = $e->getMessage();
-            $this->status_code = $e->getCode() ?: 500;
-        }
+    $message = 'Product text improved successfully';
+    } catch (Throwable $aiException) {
+    Log::warning('AI product text improvement failed. Fallback to original. Error: '.$aiException->getMessage());
 
-        return $this->JsonResponseFormat();
+    $improvedTitle = $cleanPlainText($fallbackTitle);
+    $improvedDescription = $cleanPlainText($fallbackDescription);
+    $message = 'AI enhancement unavailable or failed, returning original text.';
     }
-}
+
+    $this->data = [
+    'improved_title' => $improvedTitle,
+    'improved_description' => $improvedDescription,
+    ];
+    $this->status_message = $message;
+    $this->status_code = 200;
+    } catch (ValidationException $e) {
+    $this->status_message = $e->getMessage();
+    $this->status_code = 422;
+    $this->data = $e->errors();
+    } catch (Throwable $e) {
+    Log::error('Product text improve error: '.$e->getMessage());
+    $this->status_message = $e->getMessage();
+    $this->status_code = $e->getCode() ?: 500;
+    }
+
+    return $this->JsonResponseFormat();
+    }
+    }

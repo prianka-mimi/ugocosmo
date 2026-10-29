@@ -32,7 +32,8 @@ class ProductTextImproverAgent implements Agent, HasStructuredOutput
             .'4. If reference images are attached, inspect them closely to accurately incorporate visual details, materials, colors, textures, and styling into the title and description. '
             .'5. Maintain factual accuracy and avoid inventing contradictory technical claims. '
             .'6. If custom tone or user instructions are provided, follow them strictly. '
-            .'7. Always return the structured JSON output with improved_title and improved_description.';
+            .'7. PLAIN TEXT ONLY: Absolutely DO NOT include any HTML tags (no <p>, <br>, <strong>, <ul>, <li>, <span>, <div>, etc.). Format paragraphs with standard line breaks and bullet points with plain symbols like • or -. '
+            .'8. Always return the structured JSON output with improved_title and improved_description.';
     }
 
     /**
@@ -41,8 +42,8 @@ class ProductTextImproverAgent implements Agent, HasStructuredOutput
     public function schema(JsonSchema $schema): array
     {
         return [
-            'improved_title' => $schema->string()->description('The improved, high-converting product title.')->required(),
-            'improved_description' => $schema->string()->description('The improved, persuasive, and beautifully written product description.')->required(),
+            'improved_title' => $schema->string()->description('The improved, high-converting product title in plain text without HTML.')->required(),
+            'improved_description' => $schema->string()->description('The improved, persuasive, and beautifully written product description in plain text without any HTML tags.')->required(),
         ];
     }
 }
