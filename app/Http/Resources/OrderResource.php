@@ -44,7 +44,9 @@ class OrderResource extends JsonResource
                     'currency' => $this->shipping_currency,
                 ]
             ),
-            'tracking_number' => $this->tracking_number,
+            'tracking_number' => $this->carrier_tracking_number,
+            'transection_number' => $this->transection_number,
+            'transaction_number' => $this->transaction_number,
             'stripe_payment_intent_id' => $this->stripe_payment_intent_id,
             'aliexpress_order_numbers' => $this->aliexpress_order_numbers,
             'aliexpress_placed_at' => $this->aliexpress_placed_at?->toIso8601String(),

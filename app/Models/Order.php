@@ -72,6 +72,57 @@ class Order extends Model
         'delivered_at' => 'datetime',
     ];
 
+    protected $appends = [
+        'transection_number',
+        'transaction_number',
+    ];
+
+    /**
+     * Internal order transaction identifier (e.g. #TRN-20818796).
+     */
+    public function getTransectionNumberAttribute(): ?string
+    {
+        if (! empty($this->attributes['tracking_number']) && str_starts_with((string) $this->attributes['tracking_number'], '#TRN-')) {
+            return (string) $this->attributes['tracking_number'];
+        }
+
+        if (! empty($this->attributes['purchase_reference']) && str_starts_with((string) $this->attributes['purchase_reference'], '#TRN-')) {
+            return (string) $this->attributes['purchase_reference'];
+        }
+
+        return '#TRN-'.str_pad((string) $this->id, 8, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Standard English spelling alias for transection_number.
+     */
+    public function getTransactionNumberAttribute(): ?string
+    {
+        return $this->getTransectionNumberAttribute();
+    }
+
+    /**
+     * Real carrier shipment tracking number (e.g. FedEx, UPS, AliExpress).
+     * Null if the order has not been shipped with an external carrier yet.
+     */
+    public function getCarrierTrackingNumberAttribute(): ?string
+    {
+        $raw = $this->attributes['tracking_number'] ?? null;
+        if (! empty($raw) && ! str_starts_with((string) $raw, '#TRN-')) {
+            return (string) $raw;
+        }
+
+        $shipmentTracking = $this->relationLoaded('shipments')
+            ? $this->shipments->first()?->tracking_number
+            : $this->shipments()->first()?->tracking_number;
+
+        if (! empty($shipmentTracking) && ! str_starts_with((string) $shipmentTracking, '#TRN-')) {
+            return (string) $shipmentTracking;
+        }
+
+        return null;
+    }
+
     public function buyer(): BelongsTo
     {
         return $this->belongsTo(Profile::class, 'buyer_id');

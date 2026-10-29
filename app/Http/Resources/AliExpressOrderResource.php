@@ -33,7 +33,9 @@ class AliExpressOrderResource extends JsonResource
             'platform_fee_total' => $this->platform_fee_total,
             'total' => $this->total,
             'shipping_address' => $this->shipping_address,
-            'tracking_number' => $this->tracking_number,
+            'transection_number' => $this->transection_number,
+            'transaction_number' => $this->transaction_number,
+            'tracking_number' => $this->carrier_tracking_number,
 
             // ── AliExpress dropshipping (automated supplier order) ──
             'aliexpress_order_numbers' => $this->aliexpress_order_numbers,

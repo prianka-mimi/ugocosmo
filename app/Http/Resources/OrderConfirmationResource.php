@@ -89,7 +89,10 @@ class OrderConfirmationResource extends JsonResource
 
         return [
             'id' => $this->id,
-            'order_id' => $this->tracking_number ?: 'ORD-' . $this->id,
+            'order_id' => $this->transection_number ?: ('ORD-' . $this->id),
+            'transection_number' => $this->transection_number,
+            'transaction_number' => $this->transaction_number,
+            'tracking_number' => $this->carrier_tracking_number,
             'status' => $this->status,
             'items' => $items,
             'total' => (float) $this->total,
