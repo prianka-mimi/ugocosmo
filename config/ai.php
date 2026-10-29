@@ -13,12 +13,12 @@ return [
     |
     */
 
-    'default' => 'gemini',
-    'default_for_images' => 'gemini',
-    'default_for_audio' => 'gemini',
-    'default_for_transcription' => 'openai',
-    'default_for_embeddings' => 'openai',
-    'default_for_reranking' => 'cohere',
+    'default' => env('AI_DEFAULT_PROVIDER', 'gemini'),
+    'default_for_images' => env('AI_IMAGE_PROVIDER', 'gemini'),
+    'default_for_audio' => env('AI_AUDIO_PROVIDER', 'gemini'),
+    'default_for_transcription' => env('AI_TRANSCRIPTION_PROVIDER', 'openai'),
+    'default_for_embeddings' => env('AI_EMBEDDING_PROVIDER', 'openai'),
+    'default_for_reranking' => env('AI_RERANKING_PROVIDER', 'cohere'),
 
     /*
     |--------------------------------------------------------------------------
@@ -103,6 +103,11 @@ return [
             'key' => env('GEMINI_API_KEY'),
             'url' => env('GEMINI_URL', 'https://generativelanguage.googleapis.com/v1beta/'),
             'model' => env('GEMINI_MODEL', 'gemini-3.7-flash'),
+            'models' => [
+                'image' => [
+                    'default' => env('GEMINI_IMAGE_MODEL', 'gemini-3.1-flash-image-preview'),
+                ],
+            ],
         ],
 
         'groq' => [
