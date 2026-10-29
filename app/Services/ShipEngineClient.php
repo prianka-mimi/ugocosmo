@@ -250,40 +250,151 @@ class ShipEngineClient
      */
     public function getShippingRules(): array
     {
-        return Cache::remember('shipstation_shipping_rules', 300, function () {
+        return Cache::remember('shipengine_shipping_rules_dynamic', 3600, function () {
+            $rules = [];
+
+            // 1. Query connected carriers dynamically from live ShipEngine API (/v1/carriers)
             try {
                 if (! empty($this->apiKey) || ! empty($this->sandboxApiKey)) {
-                    // Request ShipStation rules without /v1 prefix as per official documentation
-                    $response = $this->request('get', '/shipping-rules', retryable: true, context: 'shipping_rules');
-                    $rawRules = $response['shipping_rules'] ?? $response['rules'] ?? null;
-                    if (! empty($rawRules) && is_array($rawRules)) {
-                        return array_values(array_map(function ($rule) {
-                            $code = (string) ($rule['rule_code'] ?? $rule['ruleCode'] ?? $rule['code'] ?? '');
-                            $rawKey = ! empty($rule['key']) ? (string) $rule['key'] : ($code ?: (string) ($rule['name'] ?? ''));
-                            $key = strtolower(trim($rawKey));
-                            $key = str_replace([' ', '-'], '_', $key);
-                            $key = rtrim($key, '_');
+                    $carriersData = $this->listCarriers();
+                    $carriers = $carriersData['carriers'] ?? [];
 
-                            return [
-                                'rule_code' => $code ?: strtoupper($key),
-                                'rule_id' => $rule['rule_id'] ?? $rule['ruleId'] ?? $rule['id'] ?? null,
-                                'rule_type' => $rule['rule_type'] ?? $rule['ruleType'] ?? 'Condition',
-                                'key' => $key,
-                                'name' => $rule['name'] ?? ucwords(str_replace('_', ' ', $key)),
-                                'cost' => isset($rule['cost']) ? round((float) $rule['cost'], 2) : 0.00,
-                                'estimated_delivery' => $rule['estimated_delivery'] ?? $rule['estimatedDelivery'] ?? 'Same day or next business day',
-                                'description' => $rule['description'] ?? 'Automated conditional rule from ShipStation.',
-                                'is_available' => isset($rule['is_available']) ? (bool) $rule['is_available'] : true,
+                    if (! empty($carriers)) {
+                        $hasDomesticGround = false;
+                        $hasDomesticExpress = false;
+                        $hasInternational = false;
+
+                        $groundCarriers = [];
+                        $expressCarriers = [];
+                        $intlCarriers = [];
+
+                        foreach ($carriers as $carrier) {
+                            $carrierName = (string) ($carrier['friendly_name'] ?? $carrier['carrier_code'] ?? 'Carrier');
+                            foreach ($carrier['services'] ?? [] as $service) {
+                                $code = strtolower((string) ($service['service_code'] ?? ''));
+                                $isIntl = (bool) ($service['international'] ?? false)
+                                    || str_contains($code, 'international')
+                                    || str_contains($code, 'worldwide')
+                                    || str_contains($code, 'global');
+                                $isExpress = str_contains($code, 'express')
+                                    || str_contains($code, 'priority')
+                                    || str_contains($code, '2day')
+                                    || str_contains($code, 'overnight')
+                                    || str_contains($code, 'next_day');
+
+                                if ($isIntl) {
+                                    $intlCarriers[$carrierName] = true;
+                                } elseif ($isExpress) {
+                                    $expressCarriers[$carrierName] = true;
+                                } else {
+                                    $groundCarriers[$carrierName] = true;
+                                }
+                            }
+                        }
+
+                        if (! empty($groundCarriers)) {
+                            $carrierList = implode(', ', array_keys($groundCarriers));
+                            $rules[] = [
+                                'rule_code' => 'STANDARD_SHIPPING',
+                                'rule_id' => 'se-standard-dynamic',
+                                'rule_type' => 'Service Group',
+                                'key' => 'standard_shipping',
+                                'name' => 'Standard Shipping',
+                                'cost' => 0.00,
+                                'estimated_delivery' => '3-5 business days',
+                                'description' => "Standard ground delivery via connected carriers ({$carrierList}).",
+                                'is_available' => true,
+                                'connected_carriers' => array_keys($groundCarriers),
                             ];
-                        }, $rawRules));
+                        }
+
+                        if (! empty($expressCarriers)) {
+                            $carrierList = implode(', ', array_keys($expressCarriers));
+                            $rules[] = [
+                                'rule_code' => 'EXPRESS_SHIPPING',
+                                'rule_id' => 'se-express-dynamic',
+                                'rule_type' => 'Service Group',
+                                'key' => 'express_shipping',
+                                'name' => 'Express Shipping',
+                                'cost' => 0.00,
+                                'estimated_delivery' => '1-2 business days',
+                                'description' => "Fast priority express delivery via connected carriers ({$carrierList}).",
+                                'is_available' => true,
+                                'connected_carriers' => array_keys($expressCarriers),
+                            ];
+                        }
+
+                        if (! empty($intlCarriers)) {
+                            $carrierList = implode(', ', array_keys($intlCarriers));
+                            $rules[] = [
+                                'rule_code' => 'INTERNATIONAL_SHIPPING',
+                                'rule_id' => 'se-intl-dynamic',
+                                'rule_type' => 'Service Group',
+                                'key' => 'international_shipping',
+                                'name' => 'International Shipping',
+                                'cost' => 0.00,
+                                'estimated_delivery' => '7-14 business days',
+                                'description' => "Cross-border worldwide delivery via connected carriers ({$carrierList}).",
+                                'is_available' => true,
+                                'connected_carriers' => array_keys($intlCarriers),
+                            ];
+                        }
                     }
                 }
             } catch (\Throwable $e) {
-                Log::info('ShipStation /shipping-rules dynamic fetch unavailable or unconfigured, utilizing portal rules: '.$e->getMessage());
+                Log::info('ShipEngine dynamic /v1/carriers fetch fallback: '.$e->getMessage());
             }
 
-            return $this->getConfiguredShippingRules();
+            // Fallback if carrier fetch returned empty
+            if (empty($rules)) {
+                $rules = $this->getConfiguredShippingRules();
+            }
+
+            // 2. Always merge native store options: Free Shipping & Local Delivery (Local Pickup merged/removed as requested)
+            $nativeRules = $this->getNativeStoreShippingRules();
+            $existingKeys = array_column($rules, 'key');
+            foreach ($nativeRules as $nRule) {
+                if (! in_array($nRule['key'], $existingKeys, true)) {
+                    $rules[] = $nRule;
+                }
+            }
+
+            return array_values($rules);
         });
+    }
+
+    /**
+     * Native store shipping rules (Free Shipping, Local Delivery).
+     * Local Delivery is kept; Local Pickup is unified into Local Delivery as requested.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getNativeStoreShippingRules(): array
+    {
+        return [
+            [
+                'rule_code'          => 'FREE_SHIPPING',
+                'rule_id'            => 'store-free-shipping',
+                'rule_type'          => 'Store Policy',
+                'key'                => 'free_shipping',
+                'name'               => 'Free Shipping',
+                'cost'               => 0.00,
+                'estimated_delivery' => '5-7 business days',
+                'description'        => 'Free standard delivery provided by seller.',
+                'is_available'       => true,
+            ],
+            [
+                'rule_code'          => 'LOCAL_SHIPPING',
+                'rule_id'            => 'store-local-shipping',
+                'rule_type'          => 'Store Policy',
+                'key'                => 'local_shipping',
+                'name'               => 'Local Delivery',
+                'cost'               => 0.00,
+                'estimated_delivery' => '1-2 business days',
+                'description'        => 'Direct local delivery within city/region.',
+                'is_available'       => true,
+            ],
+        ];
     }
 
     /**
@@ -328,14 +439,36 @@ class ShipEngineClient
                 'is_available' => true,
             ],
             [
+                'rule_code' => 'FREE_SHIPPING',
+                'rule_id' => 'store-free-shipping',
+                'rule_type' => 'Store Policy',
+                'key' => 'free_shipping',
+                'name' => 'Free Shipping',
+                'cost' => 0.00,
+                'estimated_delivery' => '5-7 business days',
+                'description' => 'Free standard delivery provided by seller.',
+                'is_available' => true,
+            ],
+            [
+                'rule_code' => 'LOCAL_SHIPPING',
+                'rule_id' => 'store-local-shipping',
+                'rule_type' => 'Store Policy',
+                'key' => 'local_shipping',
+                'name' => 'Local Delivery',
+                'cost' => 0.00,
+                'estimated_delivery' => '1-2 business days',
+                'description' => 'Direct local delivery within city/region.',
+                'is_available' => true,
+            ],
+            [
                 'rule_code' => 'HEAVY_ITEM_PICKUP',
                 'rule_id' => 'se-161',
                 'rule_type' => 'Condition',
                 'key' => 'heavy_item_pickup',
-                'name' => 'Heavy Item Pickup',
+                'name' => 'Heavy Item Delivery',
                 'cost' => 0.00,
                 'estimated_delivery' => 'Same day or next business day',
-                'description' => 'Automated conditional rule for heavy items pickup.',
+                'description' => 'Automated conditional rule for heavy items delivery.',
                 'is_available' => true,
             ],
             [
@@ -343,10 +476,10 @@ class ShipEngineClient
                 'rule_id' => 'se-160',
                 'rule_type' => 'Condition',
                 'key' => 'multi_item_pickup',
-                'name' => 'Multi Item Pickup',
+                'name' => 'Multi Item Delivery',
                 'cost' => 0.00,
                 'estimated_delivery' => 'Same day or next business day',
-                'description' => 'Automated conditional rule for multi-item order pickup.',
+                'description' => 'Automated conditional rule for multi-item order delivery.',
                 'is_available' => true,
             ],
         ];

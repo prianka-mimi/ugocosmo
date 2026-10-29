@@ -361,6 +361,48 @@ class ShipEngineService
             'packages' => array_map(fn (ShipEnginePackage $p) => $p->toPayload(), $packages),
         ];
 
+        // 6. Cross-border / International shipments strictly require customs items for courier quotes
+        $isCrossBorder = ($shipFrom->countryCode !== $shipTo->countryCode);
+        if ($isCrossBorder) {
+            $customsItems = [];
+            foreach ($localProducts as $lp) {
+                $p = $lp['product'];
+                $qty = $lp['quantity'];
+                $itemVal = (float) ($p->price ?? 10.00);
+                $customsItems[] = [
+                    'description' => substr((string) ($p->title ?? 'Merchandise'), 0, 50),
+                    'quantity' => max(1, $qty),
+                    'value' => [
+                        'currency' => strtoupper((string) ($p->currency ?? 'USD')),
+                        'amount' => round($itemVal, 2),
+                    ],
+                    'harmonized_tariff_code' => (string) ($p->ean_upc ?? ''),
+                    'country_of_origin' => $shipFrom->countryCode,
+                ];
+            }
+
+            if (! empty($customsItems)) {
+                $payload['customs'] = [
+                    'contents' => 'merchandise',
+                    'non_delivery' => 'return_to_sender',
+                    'customs_items' => $customsItems,
+                ];
+            }
+        }
+
+        // Dynamically populate connected carrier IDs if caller did not supply them
+        if (empty($rateOptions['carrier_ids'])) {
+            try {
+                $carriersData = $this->client->listCarriers();
+                $cIds = array_values(array_filter(array_column($carriersData['carriers'] ?? [], 'carrier_id')));
+                if (! empty($cIds)) {
+                    $rateOptions['carrier_ids'] = $cIds;
+                }
+            } catch (\Throwable $carrierEx) {
+                Log::warning('ShipEngine: unable to load dynamic carrier IDs: '.$carrierEx->getMessage());
+            }
+        }
+
         try {
             $response = $this->client->getRates($payload, $rateOptions);
             $rates = $this->normalizeRates($response);
@@ -1369,15 +1411,46 @@ class ShipEngineService
      */
     protected function buildShipmentPayload(Order $order, ?string $validateAddress = null): array
     {
-        return [
+        $shipTo = $this->shipTo($order);
+        $shipFrom = $this->shipFrom($order);
+
+        $payload = [
             'validate_address' => $validateAddress ?? 'no_validation',
-            'ship_to' => $this->shipTo($order)->toPayload(),
-            'ship_from' => $this->shipFrom($order)->toPayload(),
+            'ship_to' => $shipTo->toPayload(),
+            'ship_from' => $shipFrom->toPayload(),
             'packages' => array_map(
                 fn (ShipEnginePackage $package) => $package->toPayload(),
                 $this->packages($order)
             ),
         ];
+
+        if ($shipFrom->countryCode !== $shipTo->countryCode) {
+            $customsItems = [];
+            foreach ($order->items as $item) {
+                if ($item->product) {
+                    $customsItems[] = [
+                        'description' => substr((string) ($item->product->title ?? 'Merchandise'), 0, 50),
+                        'quantity' => max(1, (int) $item->quantity),
+                        'value' => [
+                            'currency' => strtoupper((string) ($item->product->currency ?? $order->currency ?? 'USD')),
+                            'amount' => round((float) ($item->unit_price ?? $item->product->price ?? 10.00), 2),
+                        ],
+                        'harmonized_tariff_code' => (string) ($item->product->ean_upc ?? ''),
+                        'country_of_origin' => $shipFrom->countryCode,
+                    ];
+                }
+            }
+
+            if (! empty($customsItems)) {
+                $payload['customs'] = [
+                    'contents' => 'merchandise',
+                    'non_delivery' => 'return_to_sender',
+                    'customs_items' => $customsItems,
+                ];
+            }
+        }
+
+        return $payload;
     }
 
     protected function shipTo(Order $order): ShipEngineAddress

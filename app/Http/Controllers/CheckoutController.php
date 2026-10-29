@@ -216,7 +216,7 @@ class CheckoutController extends Controller
                 ], 'Carriers and rates retrieved.');
             }
 
-            // Detect cross-border (international) shipment
+            // Detect cross-border (international) shipment accurately
             $originCountry = null;
             if (! empty($product->ship_from_address)) {
                 $parsedOrigin = $this->service->parseAddressData($product->ship_from_address, 'Seller Warehouse', $product->seller?->user?->country);
@@ -229,8 +229,15 @@ class CheckoutController extends Controller
                     $originCountry = null;
                 }
             }
-            $destCountry   = strtoupper((string) ($shipTo['country'] ?? $shipTo['country_code'] ?? 'US'));
-            $isCrossBorder = ($originCountry !== null && $originCountry !== $destCountry);
+
+            $rawDestCountry = (string) ($shipTo['country'] ?? $shipTo['country_code'] ?? 'US');
+            try {
+                $destCountry = \App\DTOs\ShipEngine\ShipEngineAddress::normalizeCountryCode($rawDestCountry);
+            } catch (\Throwable) {
+                $destCountry = strtoupper(strlen($rawDestCountry) === 2 ? $rawDestCountry : 'US');
+            }
+
+            $isCrossBorder = ($originCountry !== null && $destCountry !== null && $originCountry !== $destCountry);
 
             $allRates = $this->service->calculateRatesForPayload($items, $shipTo);
 

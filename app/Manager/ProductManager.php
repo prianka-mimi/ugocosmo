@@ -948,16 +948,14 @@ class ProductManager
         // Only include free shipping / local pickup if explicitly allowed by seller
         $enabledKeys = $data['shipping_options'] ?? [];
         if (in_array(ShippingOptionDTO::FREE_SHIPPING, $enabledKeys, true)) {
-            $tiers['free_shipping_enabled'] = (bool) filter_var($data['free_shipping_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
-            $tiers['free_shipping_cost'] = round((float) ($data['free_shipping_cost'] ?? $data['shipping_tiers']['free_shipping_cost'] ?? 0.00), 2);
-            $tiers['free_shipping_estimated_delivery'] = $data['free_shipping_estimated_delivery'] ?? $data['shipping_tiers']['free_shipping_estimated_delivery'] ?? '7-10 business days';
+            $tiers['free_shipping_enabled'] = true;
+            $tiers['free_shipping_cost'] = 0.00;
+            $tiers['free_shipping_estimated_delivery'] = $data['free_shipping_estimated_delivery'] ?? $data['shipping_tiers']['free_shipping_estimated_delivery'] ?? '5-7 business days';
         }
-        if (in_array(ShippingOptionDTO::LOCAL_SHIPPING, $enabledKeys, true)) {
-            $tiers['local_shipping_enabled'] = (bool) filter_var($data['local_shipping_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN);
-            $tiers['local_shipping_cost'] = round((float) ($data['local_shipping_cost'] ?? $data['shipping_tiers']['local_shipping_cost'] ?? 0.00), 2);
-            $tiers['local_shipping_estimated_delivery'] = $data['local_shipping_estimated_delivery'] ?? $data['shipping_tiers']['local_shipping_estimated_delivery'] ?? '1-3 business days';
-        }
-        if (in_array(ShippingOptionDTO::LOCAL_PICKUP, $enabledKeys, true)) {
+        if (in_array(ShippingOptionDTO::LOCAL_SHIPPING, $enabledKeys, true) || in_array(ShippingOptionDTO::LOCAL_PICKUP, $enabledKeys, true)) {
+            $tiers['local_shipping_enabled'] = true;
+            $tiers['local_shipping_cost'] = 0.00;
+            $tiers['local_shipping_estimated_delivery'] = $data['local_shipping_estimated_delivery'] ?? ($data['shipping_tiers']['local_shipping_estimated_delivery'] ?? '1-2 business days');
             $tiers['local_pickup_cost'] = 0.00;
         }
         if (in_array(ShippingOptionDTO::MULTI_ITEM_PICKUP, $enabledKeys, true)) {

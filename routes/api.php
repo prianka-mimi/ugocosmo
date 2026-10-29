@@ -432,7 +432,7 @@ Route::middleware(['auth:jwt'])->group(function () {
     });
 
     // ─── Payments (Stripe PaymentIntent for Mobile / Web) ────────────
-    Route::post('payments/{order}/pay', [PaymentController::class, 'getPaymentDetails']);
+    Route::match(['get', 'post'], 'payments/{order}/pay', [PaymentController::class, 'getPaymentDetails']);
 
     // ─── Orders ──────────────────────────────────────────────────────
     Route::prefix('orders')->group(function () {

@@ -184,16 +184,18 @@ class CheckoutManager
                     $localShipping = 0.00;
 
                     if ($localItems->isNotEmpty()) {
-                        if ($cartSelectedShipping && isset($cartSelectedShipping['shipping_amount'])) {
+                        if (in_array($shippingMethod, [
+                            ShippingOptionDTO::FREE_SHIPPING,
+                            ShippingOptionDTO::LOCAL_PICKUP,
+                            ShippingOptionDTO::LOCAL_SHIPPING,
+                        ], true)) {
+                            $localShipping = 0.00;
+                        } elseif ($cartSelectedShipping && isset($cartSelectedShipping['shipping_amount'])) {
                             $localShipping = round((float) $cartSelectedShipping['shipping_amount'], 2);
                         } elseif (isset($data['shipping_amount'])) {
                             $localShipping = round((float) $data['shipping_amount'], 2);
                         } else {
-                            if (in_array($shippingMethod, [ShippingOptionDTO::FREE_SHIPPING, ShippingOptionDTO::LOCAL_PICKUP], true)) {
-                                $localShipping = 0.00;
-                            } else {
-                                $localShipping = round($localItems->sum(fn ($i) => (float) $i->product->getShippingOptionCost($shippingMethod)), 2);
-                            }
+                            $localShipping = round($localItems->sum(fn ($i) => (float) $i->product->getShippingOptionCost($shippingMethod)), 2);
                         }
                     }
 
@@ -777,15 +779,31 @@ class CheckoutManager
         }
 
         if ($cartSelectedShipping && isset($cartSelectedShipping['shipping_amount'])) {
-            $shippingAmount = round($aliExpressShipping + (float) $cartSelectedShipping['shipping_amount'], 2);
             $requestedMethod = $cartSelectedShipping['shipping_method'] ?? $requestedMethod;
+            if (in_array($requestedMethod, [
+                ShippingOptionDTO::FREE_SHIPPING,
+                ShippingOptionDTO::LOCAL_PICKUP,
+                ShippingOptionDTO::LOCAL_SHIPPING,
+            ], true)) {
+                $shippingAmount = 0.00;
+            } else {
+                $shippingAmount = round($aliExpressShipping + (float) $cartSelectedShipping['shipping_amount'], 2);
+            }
         } else {
             if (! $selectedShippingOption && ! empty($availableShippingOptions)) {
                 $selectedShippingOption = $availableShippingOptions[0];
                 $requestedMethod = $selectedShippingOption['key'];
                 $shippingAmount = (float) $selectedShippingOption['cost'];
             }
-            $shippingAmount = round($aliExpressShipping + $shippingAmount, 2);
+            if (in_array($requestedMethod, [
+                ShippingOptionDTO::FREE_SHIPPING,
+                ShippingOptionDTO::LOCAL_PICKUP,
+                ShippingOptionDTO::LOCAL_SHIPPING,
+            ], true)) {
+                $shippingAmount = 0.00;
+            } else {
+                $shippingAmount = round($aliExpressShipping + $shippingAmount, 2);
+            }
         }
 
         // Zero buyer platform fee
@@ -887,7 +905,11 @@ class CheckoutManager
         $results = [];
         foreach ($intersection as $optionKey) {
             $totalCost = 0.00;
-            if (! in_array($optionKey, [ShippingOptionDTO::FREE_SHIPPING, ShippingOptionDTO::LOCAL_PICKUP], true)) {
+            if (! in_array($optionKey, [
+                ShippingOptionDTO::FREE_SHIPPING,
+                ShippingOptionDTO::LOCAL_PICKUP,
+                ShippingOptionDTO::LOCAL_SHIPPING,
+            ], true)) {
                 foreach ($items as $item) {
                     if ($item->product) {
                         $totalCost += $item->product->getShippingOptionCost($optionKey);

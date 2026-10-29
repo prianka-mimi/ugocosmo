@@ -138,6 +138,11 @@ final readonly class ShippingOptionDTO
         $normalized = strtolower($trimmed);
         $normalized = rtrim($normalized, '_');
 
+        // Seamlessly unify legacy local_pickup to local_shipping (Local Delivery) without breaking existing app models
+        if ($normalized === 'local_pickup') {
+            return self::LOCAL_SHIPPING;
+        }
+
         // Check if matches a known ShipStation rule in cache
         $rules = self::getDynamicRulesMap();
         if (isset($rules[$normalized])) {

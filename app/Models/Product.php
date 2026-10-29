@@ -485,6 +485,7 @@ class Product extends Model
 
     /**
      * Resolve shipping cost for a given shipping option.
+     * Free Shipping, Local Delivery, and Local Pickup always have 0.00 shipping cost.
      */
     public function getShippingOptionCost(string $option): float
     {
@@ -493,23 +494,18 @@ class Product extends Model
             return (float) ($this->shipping_cost ?? 0.00);
         }
 
-        $tiers = is_array($this->shipping_tiers) ? $this->shipping_tiers : [];
-
-        if ($canonical === ShippingOptionDTO::FREE_SHIPPING) {
-            return round((float) ($tiers['free_shipping_cost'] ?? 0.00), 2);
-        }
-
-        if ($canonical === ShippingOptionDTO::LOCAL_SHIPPING) {
-            return round((float) ($tiers['local_shipping_cost'] ?? 0.00), 2);
-        }
-
-        if (str_ends_with($canonical, '_pickup') || in_array($canonical, [
+        // Free shipping, local delivery, and local pickup always cost 0.00
+        if (in_array($canonical, [
+            ShippingOptionDTO::FREE_SHIPPING,
+            ShippingOptionDTO::LOCAL_SHIPPING,
             ShippingOptionDTO::LOCAL_PICKUP,
             ShippingOptionDTO::MULTI_ITEM_PICKUP,
             ShippingOptionDTO::HEAVY_ITEM_PICKUP,
-        ], true)) {
-            return (float) ($tiers[$canonical.'_cost'] ?? 0.00);
+        ], true) || str_ends_with($canonical, '_pickup')) {
+            return 0.00;
         }
+
+        $tiers = is_array($this->shipping_tiers) ? $this->shipping_tiers : [];
 
         $possibleKeys = [
             $canonical.'_cost',
@@ -547,25 +543,25 @@ class Product extends Model
             $cost = $this->getShippingOptionCost($key);
             $dto  = ShippingOptionDTO::make($key, $cost);
 
-            if ($key === ShippingOptionDTO::FREE_SHIPPING && ! empty($tiers['free_shipping_estimated_delivery'])) {
+            if ($key === ShippingOptionDTO::FREE_SHIPPING) {
                 $dto = new ShippingOptionDTO(
                     key: $dto->key,
-                    name: $dto->name,
-                    cost: $dto->cost,
-                    estimatedDelivery: $tiers['free_shipping_estimated_delivery'],
-                    description: $dto->description,
-                    isAvailable: $dto->isAvailable,
+                    name: 'Free Shipping',
+                    cost: 0.00,
+                    estimatedDelivery: $tiers['free_shipping_estimated_delivery'] ?? '5-7 business days',
+                    description: 'Free shipping provided by seller.',
+                    isAvailable: true,
+                    ruleCode: 'FREE_SHIPPING',
                 );
-            }
-
-            if ($key === ShippingOptionDTO::LOCAL_SHIPPING && ! empty($tiers['local_shipping_estimated_delivery'])) {
+            } elseif ($key === ShippingOptionDTO::LOCAL_SHIPPING || $key === 'local_pickup') {
                 $dto = new ShippingOptionDTO(
-                    key: $dto->key,
-                    name: $dto->name,
-                    cost: $dto->cost,
-                    estimatedDelivery: $tiers['local_shipping_estimated_delivery'],
-                    description: $dto->description,
-                    isAvailable: $dto->isAvailable,
+                    key: ShippingOptionDTO::LOCAL_SHIPPING,
+                    name: 'Local Delivery',
+                    cost: 0.00,
+                    estimatedDelivery: $tiers['local_shipping_estimated_delivery'] ?? ($tiers['local_pickup_estimated_delivery'] ?? '1-2 business days'),
+                    description: 'Direct local delivery within city/region.',
+                    isAvailable: true,
+                    ruleCode: 'LOCAL_SHIPPING',
                 );
             }
 
