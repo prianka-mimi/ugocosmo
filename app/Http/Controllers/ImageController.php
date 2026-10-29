@@ -38,15 +38,17 @@ class ImageController extends Controller
                 $attachment = AiImage::fromStorage($path, 'local');
             }
 
-            $basePrompt = 'Upscale and enhance this image. Improve sharpness, lighting, and clarity. Maintain the original subject, colors, and background exactly as they are. Make it look like a high quality professional product photo.';
-            
             if ($request->filled('prompt_override')) {
-                $basePrompt = $request->prompt_override.'. '.$basePrompt;
+                $prompt = rtrim(trim($request->prompt_override), '.').'. Keep the main product/subject intact, sharp, and unmodified. High quality commercial product photography.';
+            } else {
+                $prompt = 'Upscale and enhance this image. Improve sharpness, lighting, and clarity. Maintain the original subject, colors, and background exactly as they are. Make it look like a high quality professional product photo.';
             }
+
+            Log::info('Generating product image with prompt: '.$prompt);
 
             try {
                 // Generate the new enhanced image based on the text prompt, passing the original image as a base
-                $newImage = Image::of($basePrompt)
+                $newImage = Image::of($prompt)
                     ->attachments([$attachment])
                     ->quality('high')
                     ->generate();
