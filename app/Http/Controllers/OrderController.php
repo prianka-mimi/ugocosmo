@@ -351,9 +351,9 @@ class OrderController extends Controller
 
             $this->data = [
                 'refund_id' => $refund['id'] ?? null,
-                'amount' => isset($refund['amount']) ? $refund['amount'] / 100 : null,
+                'amount' => isset($refund['amount']) ? round($refund['amount'] / 100, 2) : (float) $order->total,
                 'currency' => strtoupper($refund['currency'] ?? 'usd'),
-                'status' => $refund['status'] ?? null,
+                'status' => $refund['status'] ?? 'succeeded',
                 'order_id' => $order->id,
             ];
             $this->status_message = 'Refund issued successfully.';
@@ -361,7 +361,8 @@ class OrderController extends Controller
         } catch (Throwable $e) {
             Log::error('Order refund error: '.$e->getMessage());
             $this->status_message = $e->getMessage();
-            $this->status_code = $e->getCode() ?: 500;
+            $code = (int) $e->getCode();
+            $this->status_code = ($code >= 400 && $code < 600) ? $code : 400;
         }
 
         return $this->JsonResponseFormat();

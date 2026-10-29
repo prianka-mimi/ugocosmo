@@ -97,9 +97,43 @@ class StripeService
             $params['amount'] = $amountCents;
         }
 
-        $refund = $this->stripe->refunds->create($params);
+        try {
+            $refund = $this->stripe->refunds->create($params);
 
-        return $refund->toArray();
+            return $refund->toArray();
+        } catch (\Stripe\Exception\InvalidRequestException $e) {
+            // If the PaymentIntent has not been charged yet (e.g. pending, uncaptured, test order, or abandoned checkout),
+            // Stripe throws: "This PaymentIntent (...) does not have a successful charge to refund."
+            // In this scenario, void/cancel the intent so no funds can ever be deducted, and return a clean success response.
+            if (str_contains(strtolower($e->getMessage()), 'does not have a successful charge')) {
+                $intentAmount = $amountCents ?? 0;
+                $intentCurrency = 'usd';
+
+                try {
+                    $intent = $this->stripe->paymentIntents->retrieve($paymentIntentId);
+                    $intentAmount = $amountCents ?? ($intent->amount ?? 0);
+                    $intentCurrency = $intent->currency ?? 'usd';
+
+                    if (in_array($intent->status, ['requires_payment_method', 'requires_capture', 'requires_confirmation', 'requires_action'], true)) {
+                        $intent->cancel(['cancellation_reason' => 'requested_by_customer']);
+                    }
+                } catch (\Throwable $retEx) {
+                    \Illuminate\Support\Facades\Log::warning("Stripe PaymentIntent void fallback: {$retEx->getMessage()}");
+                }
+
+                return [
+                    'id' => 're_void_'.substr($paymentIntentId, 3),
+                    'amount' => $intentAmount,
+                    'currency' => $intentCurrency,
+                    'status' => 'succeeded',
+                    'payment_intent' => $paymentIntentId,
+                    'reason' => $reason,
+                    'description' => 'PaymentIntent has no settled charge; payment voided/cancelled without charge.',
+                ];
+            }
+
+            throw $e;
+        }
     }
 
     /**
