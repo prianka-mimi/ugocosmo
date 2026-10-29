@@ -85,11 +85,11 @@ class ProfileManager
     {
         $user = Auth::guard('jwt')->user();
 
+        // Email changes are strictly restricted to the dedicated /email-change OTP endpoint
         $fillable = [
             'account_type',
             'name',
             'username',
-            'email',
             'mobile_number',
             'address_line_1',
             'address_line_2',
@@ -114,11 +114,6 @@ class ProfileManager
             $data['mobile_number'] = $data['phone'];
         }
 
-        if (array_key_exists('email', $data) && $data['email'] !== $user->email) {
-            $user->is_verified = false;
-            $user->verified_at = null;
-        }
-
         foreach ($fillable as $field) {
             if (array_key_exists($field, $data)) {
                 $user->$field = $data[$field];
@@ -127,14 +122,11 @@ class ProfileManager
 
         $user->save();
 
-        // Keep linked Profile in sync with User core identity fields
+        // Keep linked Profile in sync with User core identity fields (excluding email, which changes via /email-change only)
         if ($user->profile) {
             $profileUpdates = [];
             if (array_key_exists('name', $data)) {
                 $profileUpdates['full_name'] = $data['name'];
-            }
-            if (array_key_exists('email', $data)) {
-                $profileUpdates['email'] = $data['email'];
             }
             if (array_key_exists('username', $data)) {
                 $profileUpdates['username'] = $data['username'];
