@@ -115,7 +115,8 @@ class ProfileManager
         }
 
         if (array_key_exists('email', $data) && $data['email'] !== $user->email) {
-            $user->email_verified_at = null;
+            $user->is_verified = false;
+            $user->verified_at = null;
         }
 
         foreach ($fillable as $field) {
@@ -125,6 +126,23 @@ class ProfileManager
         }
 
         $user->save();
+
+        // Keep linked Profile in sync with User core identity fields
+        if ($user->profile) {
+            $profileUpdates = [];
+            if (array_key_exists('name', $data)) {
+                $profileUpdates['full_name'] = $data['name'];
+            }
+            if (array_key_exists('email', $data)) {
+                $profileUpdates['email'] = $data['email'];
+            }
+            if (array_key_exists('username', $data)) {
+                $profileUpdates['username'] = $data['username'];
+            }
+            if (! empty($profileUpdates)) {
+                $user->profile->update($profileUpdates);
+            }
+        }
 
         // Sync with default SavedAddress
         $addressFields = ['name', 'mobile_number', 'phone', 'address_line_1', 'address_line1', 'address_line_2', 'city', 'city_locality', 'postal_code', 'country', 'country_code', 'state_province', 'label'];
