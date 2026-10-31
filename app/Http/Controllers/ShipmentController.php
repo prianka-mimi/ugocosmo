@@ -652,7 +652,18 @@ class ShipmentController extends Controller
     public function availableOptions(Request $request): JsonResponse
     {
         try {
-            $rules = app(\App\Services\ShipEngineClient::class)->getShippingRules();
+            $client = app(\App\Services\ShipEngineClient::class);
+            $rules = $client->getShippingRules();
+
+            if ($request->boolean('include_store') || $request->boolean('all') || $request->input('type') === 'all') {
+                $nativeRules = $client->getNativeStoreShippingRules();
+                $existingKeys = array_column($rules, 'key');
+                foreach ($nativeRules as $nRule) {
+                    if (! in_array($nRule['key'], $existingKeys, true)) {
+                        $rules[] = $nRule;
+                    }
+                }
+            }
 
             return ApiResponse::success(['shipping_options' => $rules], 'Available shipping options retrieved.');
         } catch (ShipEngineAuthenticationException $e) {

@@ -244,26 +244,23 @@ class ShipEngineClient
      */
     /**
      * Retrieve shipping rules from ShipStation / ShipEngine without /v1 prefix.
-     * Follows official ShipStation documentation and portal rules.
+     * Follows official ShipStation documentation and portal rules (https://api-portal.shipstation.com/shipping-rules).
      *
      * @return array<int, array<string, mixed>>
      */
     public function getShippingRules(): array
     {
         return Cache::remember('shipengine_shipping_rules_dynamic', 3600, function () {
-            $rules = [];
+            $rules = $this->getConfiguredShippingRules();
 
-            // 1. Query connected carriers dynamically from live ShipEngine API (/v1/carriers)
+            // Query connected carriers dynamically from live ShipEngine API (/v1/carriers)
+            // to enrich Service Groups with live connected carrier names and services
             try {
                 if (! empty($this->apiKey) || ! empty($this->sandboxApiKey)) {
                     $carriersData = $this->listCarriers();
                     $carriers = $carriersData['carriers'] ?? [];
 
                     if (! empty($carriers)) {
-                        $hasDomesticGround = false;
-                        $hasDomesticExpress = false;
-                        $hasInternational = false;
-
                         $groundCarriers = [];
                         $expressCarriers = [];
                         $intlCarriers = [];
@@ -292,71 +289,26 @@ class ShipEngineClient
                             }
                         }
 
-                        if (! empty($groundCarriers)) {
-                            $carrierList = implode(', ', array_keys($groundCarriers));
-                            $rules[] = [
-                                'rule_code' => 'STANDARD_SHIPPING',
-                                'rule_id' => 'se-standard-dynamic',
-                                'rule_type' => 'Service Group',
-                                'key' => 'standard_shipping',
-                                'name' => 'Standard Shipping',
-                                'cost' => 0.00,
-                                'estimated_delivery' => '3-5 business days',
-                                'description' => "Standard ground delivery via connected carriers ({$carrierList}).",
-                                'is_available' => true,
-                                'connected_carriers' => array_keys($groundCarriers),
-                            ];
+                        foreach ($rules as &$rule) {
+                            if ($rule['rule_code'] === 'STANDARD_SHIPPING' && ! empty($groundCarriers)) {
+                                $carrierList = implode(', ', array_keys($groundCarriers));
+                                $rule['description'] = "Standard ground delivery via connected carriers ({$carrierList}).";
+                                $rule['connected_carriers'] = array_keys($groundCarriers);
+                            } elseif ($rule['rule_code'] === 'EXPRESS_SHIPPING' && ! empty($expressCarriers)) {
+                                $carrierList = implode(', ', array_keys($expressCarriers));
+                                $rule['description'] = "Fast priority express delivery via connected carriers ({$carrierList}).";
+                                $rule['connected_carriers'] = array_keys($expressCarriers);
+                            } elseif (str_starts_with((string) $rule['rule_code'], 'INTERNATIONAL_SHIPPING') && ! empty($intlCarriers)) {
+                                $carrierList = implode(', ', array_keys($intlCarriers));
+                                $rule['description'] = "Cross-border worldwide delivery via connected carriers ({$carrierList}).";
+                                $rule['connected_carriers'] = array_keys($intlCarriers);
+                            }
                         }
-
-                        if (! empty($expressCarriers)) {
-                            $carrierList = implode(', ', array_keys($expressCarriers));
-                            $rules[] = [
-                                'rule_code' => 'EXPRESS_SHIPPING',
-                                'rule_id' => 'se-express-dynamic',
-                                'rule_type' => 'Service Group',
-                                'key' => 'express_shipping',
-                                'name' => 'Express Shipping',
-                                'cost' => 0.00,
-                                'estimated_delivery' => '1-2 business days',
-                                'description' => "Fast priority express delivery via connected carriers ({$carrierList}).",
-                                'is_available' => true,
-                                'connected_carriers' => array_keys($expressCarriers),
-                            ];
-                        }
-
-                        if (! empty($intlCarriers)) {
-                            $carrierList = implode(', ', array_keys($intlCarriers));
-                            $rules[] = [
-                                'rule_code' => 'INTERNATIONAL_SHIPPING',
-                                'rule_id' => 'se-intl-dynamic',
-                                'rule_type' => 'Service Group',
-                                'key' => 'international_shipping',
-                                'name' => 'International Shipping',
-                                'cost' => 0.00,
-                                'estimated_delivery' => '7-14 business days',
-                                'description' => "Cross-border worldwide delivery via connected carriers ({$carrierList}).",
-                                'is_available' => true,
-                                'connected_carriers' => array_keys($intlCarriers),
-                            ];
-                        }
+                        unset($rule);
                     }
                 }
             } catch (\Throwable $e) {
                 Log::info('ShipEngine dynamic /v1/carriers fetch fallback: '.$e->getMessage());
-            }
-
-            // Fallback if carrier fetch returned empty
-            if (empty($rules)) {
-                $rules = $this->getConfiguredShippingRules();
-            }
-
-            // 2. Always merge native store options: Free Shipping & Local Delivery (Local Pickup merged/removed as requested)
-            $nativeRules = $this->getNativeStoreShippingRules();
-            $existingKeys = array_column($rules, 'key');
-            foreach ($nativeRules as $nRule) {
-                if (! in_array($nRule['key'], $existingKeys, true)) {
-                    $rules[] = $nRule;
-                }
             }
 
             return array_values($rules);
@@ -400,87 +352,72 @@ class ShipEngineClient
     /**
      * Shipping rules configured in ShipStation API Portal (https://api-portal.shipstation.com/shipping-rules).
      *
+     * Exact 5 shipping rules from the ShipStation portal in defined display order:
+     * 1. MULTI_ITEM_PICKUP    (se-160, Condition)
+     * 2. HEAVY_ITEM_PICKUP    (se-161, Condition)
+     * 3. INTERNATIONAL_SHIPPING_ (se-162, Service Group)
+     * 4. STANDARD_SHIPPING    (se-163, Service Group)
+     * 5. EXPRESS_SHIPPING     (se-164, Service Group)
+     *
      * @return array<int, array<string, mixed>>
      */
     public function getConfiguredShippingRules(): array
     {
         return [
             [
-                'rule_code' => 'STANDARD_SHIPPING',
-                'rule_id' => 'se-163',
-                'rule_type' => 'Service Group',
-                'key' => 'standard_shipping',
-                'name' => 'Standard Shipping',
-                'cost' => 0.00,
-                'estimated_delivery' => '5-7 business days',
-                'description' => 'Automated standard ground shipping service group from ShipStation.',
-                'is_available' => true,
+                'rule_code'          => 'MULTI_ITEM_PICKUP',
+                'rule_id'            => 'se-160',
+                'rule_type'          => 'Condition',
+                'key'                => 'multi_item_pickup',
+                'name'               => 'Multi Item Pickup',
+                'cost'               => 0.00,
+                'estimated_delivery' => 'Same day or next business day',
+                'description'        => 'Automated conditional rule for multi-item order pickup from ShipStation.',
+                'is_available'       => true,
             ],
             [
-                'rule_code' => 'EXPRESS_SHIPPING',
-                'rule_id' => 'se-164',
-                'rule_type' => 'Service Group',
-                'key' => 'express_shipping',
-                'name' => 'Express Shipping',
-                'cost' => 0.00,
-                'estimated_delivery' => '2-3 business days',
-                'description' => 'Fast expedited priority delivery automated from ShipStation rules.',
-                'is_available' => true,
+                'rule_code'          => 'HEAVY_ITEM_PICKUP',
+                'rule_id'            => 'se-161',
+                'rule_type'          => 'Condition',
+                'key'                => 'heavy_item_pickup',
+                'name'               => 'Heavy Item Pickup',
+                'cost'               => 0.00,
+                'estimated_delivery' => 'Same day or next business day',
+                'description'        => 'Automated conditional rule for heavy items pickup from ShipStation.',
+                'is_available'       => true,
             ],
             [
-                'rule_code' => 'INTERNATIONAL_SHIPPING_',
-                'rule_id' => 'se-162',
-                'rule_type' => 'Service Group',
-                'key' => 'international_shipping',
-                'name' => 'International Shipping',
-                'cost' => 0.00,
-                'estimated_delivery' => '10-21 business days',
-                'description' => 'Cross-border international delivery service group automated from ShipStation.',
-                'is_available' => true,
+                'rule_code'          => 'INTERNATIONAL_SHIPPING_',
+                'rule_id'            => 'se-162',
+                'rule_type'          => 'Service Group',
+                'key'                => 'international_shipping',
+                'name'               => 'International Shipping',
+                'cost'               => 0.00,
+                'estimated_delivery' => '7-14 business days',
+                'description'        => 'Cross-border international delivery service group automated from ShipStation.',
+                'is_available'       => true,
             ],
             [
-                'rule_code' => 'FREE_SHIPPING',
-                'rule_id' => 'store-free-shipping',
-                'rule_type' => 'Store Policy',
-                'key' => 'free_shipping',
-                'name' => 'Free Shipping',
-                'cost' => 0.00,
-                'estimated_delivery' => '5-7 business days',
-                'description' => 'Free standard delivery provided by seller.',
-                'is_available' => true,
+                'rule_code'          => 'STANDARD_SHIPPING',
+                'rule_id'            => 'se-163',
+                'rule_type'          => 'Service Group',
+                'key'                => 'standard_shipping',
+                'name'               => 'Standard Shipping',
+                'cost'               => 0.00,
+                'estimated_delivery' => '3-5 business days',
+                'description'        => 'Automated standard ground shipping service group from ShipStation.',
+                'is_available'       => true,
             ],
             [
-                'rule_code' => 'LOCAL_SHIPPING',
-                'rule_id' => 'store-local-shipping',
-                'rule_type' => 'Store Policy',
-                'key' => 'local_shipping',
-                'name' => 'Local Delivery',
-                'cost' => 0.00,
+                'rule_code'          => 'EXPRESS_SHIPPING',
+                'rule_id'            => 'se-164',
+                'rule_type'          => 'Service Group',
+                'key'                => 'express_shipping',
+                'name'               => 'Express Shipping',
+                'cost'               => 0.00,
                 'estimated_delivery' => '1-2 business days',
-                'description' => 'Direct local delivery within city/region.',
-                'is_available' => true,
-            ],
-            [
-                'rule_code' => 'HEAVY_ITEM_PICKUP',
-                'rule_id' => 'se-161',
-                'rule_type' => 'Condition',
-                'key' => 'heavy_item_pickup',
-                'name' => 'Heavy Item Delivery',
-                'cost' => 0.00,
-                'estimated_delivery' => 'Same day or next business day',
-                'description' => 'Automated conditional rule for heavy items delivery.',
-                'is_available' => true,
-            ],
-            [
-                'rule_code' => 'MULTI_ITEM_PICKUP',
-                'rule_id' => 'se-160',
-                'rule_type' => 'Condition',
-                'key' => 'multi_item_pickup',
-                'name' => 'Multi Item Delivery',
-                'cost' => 0.00,
-                'estimated_delivery' => 'Same day or next business day',
-                'description' => 'Automated conditional rule for multi-item order delivery.',
-                'is_available' => true,
+                'description'        => 'Fast expedited priority delivery automated from ShipStation rules.',
+                'is_available'       => true,
             ],
         ];
     }
