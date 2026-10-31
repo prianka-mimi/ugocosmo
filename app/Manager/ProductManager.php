@@ -807,7 +807,7 @@ class ProductManager
                 : null,
             'category_id' => $product->category_id,
             'stock_quantity' => $product->stock_quantity,
-            'product_type' => $product->product_type ?? ($product->source === 'aliexpress' ? 'physical' : null),
+            'product_type' => strtolower((string) ($product->product_type ?? '')) === 'digital' ? 'digital' : 'physical',
             'condition' => $product->condition ?? ($product->source === 'aliexpress' ? 'new' : null),
             'product_variants' => $product->product_variants ?? [],
             'specifications' => $product->specifications

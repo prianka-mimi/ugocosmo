@@ -12,6 +12,15 @@ class ProductUpdateRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('product_type') && $this->input('product_type') !== null) {
+            $this->merge([
+                'product_type' => strtolower(trim((string) $this->input('product_type'))),
+            ]);
+        }
+    }
+
     public function rules(): array
     {
         return [
@@ -28,7 +37,7 @@ class ProductUpdateRequest extends FormRequest
             }],
             'category_id' => ['nullable', 'integer', 'exists:product_categories,id'],
             'stock_quantity' => ['nullable', 'integer', 'min:0'],
-            'product_type' => ['nullable', 'string', 'max:255'],
+            'product_type' => ['nullable', 'string', 'in:physical,digital'],
             'condition' => ['nullable', 'string', 'in:new,used,refurbished'],
             'product_variants' => ['nullable', 'array'],
             'product_variants.*.name' => ['required_with:product_variants', 'string', 'max:100'],

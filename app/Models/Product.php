@@ -647,18 +647,27 @@ class Product extends Model
     }
 
     /**
+     * Strictly normalize product_type attribute to either 'physical' or 'digital'.
+     */
+    public function getProductTypeAttribute(?string $value): string
+    {
+        return strtolower((string) $value) === 'digital' ? 'digital' : 'physical';
+    }
+
+    /**
+     * Strictly sanitize product_type before saving to database.
+     */
+    public function setProductTypeAttribute(?string $value): void
+    {
+        $this->attributes['product_type'] = strtolower((string) $value) === 'digital' ? 'digital' : 'physical';
+    }
+
+    /**
      * Check if the product is a digital or non-physical item.
      */
     public function isDigital(): bool
     {
-        $digitalTypes = config('shipping.digital_product_types', [
-            'digital',
-            'digital_download',
-            'virtual',
-            'service',
-        ]);
-
-        return in_array(strtolower((string) $this->product_type), $digitalTypes, true);
+        return $this->product_type === 'digital';
     }
 
     /**

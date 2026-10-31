@@ -11,6 +11,15 @@ class ProductIndexRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('product_type') && $this->input('product_type') !== null) {
+            $this->merge([
+                'product_type' => strtolower(trim((string) $this->input('product_type'))),
+            ]);
+        }
+    }
+
     public function rules(): array
     {
         return [
@@ -19,7 +28,7 @@ class ProductIndexRequest extends FormRequest
             'category_id' => ['nullable', 'integer', 'exists:product_categories,id'],
             'category' => ['nullable'],
             'condition' => ['nullable', 'string', 'in:new,used,refurbished'],
-            'product_type' => ['nullable', 'string', 'max:255'],
+            'product_type' => ['nullable', 'string', 'in:physical,digital'],
             'min_price' => ['nullable', 'numeric', 'min:0'],
             'max_price' => ['nullable', 'numeric', 'min:0'],
             'min_rating' => ['nullable', 'numeric', 'min:0', 'max:5'],

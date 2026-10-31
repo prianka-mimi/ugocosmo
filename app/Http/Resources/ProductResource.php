@@ -65,7 +65,7 @@ class ProductResource extends JsonResource
             'compare_at_price' => $this->compare_at_price ? (float) $this->compare_at_price : ($src['original_price'] ?? ($src['original_price_min'] ?? null)),
             'category'         => $this->whenLoaded('category', fn() => new ProductCategoryResource($this->category)),
             'stock_quantity'   => (int) $this->stock_quantity,
-            'product_type'     => $this->product_type ?? ($this->source === 'aliexpress' ? 'physical' : null),
+            'product_type'     => strtolower((string) ($this->product_type ?? '')) === 'digital' ? 'digital' : 'physical',
             'condition'        => $this->condition ?? ($this->source === 'aliexpress' ? 'new' : null),
             'product_variants' => $this->castVariants($this->product_variants ?? []),
 

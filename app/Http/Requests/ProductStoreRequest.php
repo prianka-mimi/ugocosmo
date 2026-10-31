@@ -12,6 +12,19 @@ class ProductStoreRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('product_type') && $this->input('product_type') !== null) {
+            $this->merge([
+                'product_type' => strtolower(trim((string) $this->input('product_type'))),
+            ]);
+        } else {
+            $this->merge([
+                'product_type' => 'physical',
+            ]);
+        }
+    }
+
     public function rules(): array
     {
         return [
@@ -24,7 +37,7 @@ class ProductStoreRequest extends FormRequest
             'currency'             => ['nullable', 'string', 'max:10'],
             'stock_quantity'       => ['required', 'integer', 'min:0'],
             'category_id'          => ['required', 'integer', 'exists:product_categories,id'],
-            'product_type'         => ['required', 'string', 'max:255'],
+            'product_type'         => ['required', 'string', 'in:physical,digital'],
             'condition'            => ['required', 'string', 'in:new,used,refurbished'],
             'brand'                => ['nullable', 'string', 'max:255'],
             'ean_upc'              => ['nullable', 'string', 'max:100'],

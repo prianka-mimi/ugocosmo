@@ -723,7 +723,7 @@ class CheckoutManager
                     'sku' => $product->sku ?? ($product->aliexpress_sku ?? ($src['skus'][0]['sku_code'] ?? null)),
                     'stock_quantity' => (int) ($product->stock_quantity ?? 0),
                     'in_stock' => (int) ($product->stock_quantity ?? 0) >= $item->quantity,
-                    'product_type' => $product->product_type ?? ($product->source === 'aliexpress' ? 'physical' : null),
+                    'product_type' => strtolower((string) ($product->product_type ?? '')) === 'digital' ? 'digital' : 'physical',
                     'condition' => $product->condition ?? ($product->source === 'aliexpress' ? 'new' : null),
                     'product_variants' => $product->product_variants ?? [],
                     'available_shipping_options' => array_map(fn ($opt) => $opt->toArray(), $product->getEnabledShippingOptions()),
