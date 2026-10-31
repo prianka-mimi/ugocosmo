@@ -22,11 +22,19 @@ class CartResource extends JsonResource
             'total_price' => (float) $item->unit_price * $item->quantity,
         ]);
 
+        $subtotal = round((float) $items->sum('total_price'), 2);
+
         return [
             'id' => $this->id,
             'items' => $items,
             'item_count' => $items->sum('quantity'),
-            'subtotal' => $items->sum('total_price'),
+            'subtotal' => $subtotal,
+            'sub_total' => $subtotal,
+            'shipping_total' => 0.00,
+            'shipping_amount' => 0.00,
+            'shipping_fee' => 0.00,
+            'total' => $subtotal,
+            'total_amount' => $subtotal,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

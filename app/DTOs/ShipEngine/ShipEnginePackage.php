@@ -62,9 +62,11 @@ final readonly class ShipEnginePackage
 
         $productWeight = (float) $product->weight;
         $weightValue = $productWeight > 0 ? $productWeight : $defaultWeightValue;
-        $weightUnit = (string) ($config['weight_unit'] ?? $defaultWeightUnit);
 
         $dimensions = is_array($product->package_dimensions) ? $product->package_dimensions : [];
+        $rawWeightUnit = (string) ($dimensions['weight_unit'] ?? ($product->weight_unit ?? ($config['weight_unit'] ?? $defaultWeightUnit)));
+        $weightUnit = self::normalizeWeightUnit($rawWeightUnit);
+
         $defaultDims = (array) ($config['default_dimensions'] ?? config('shipengine.default_dimensions', config('services.shipengine.default_dimensions', [
             'length' => 10.0,
             'width' => 5.0,
@@ -72,19 +74,22 @@ final readonly class ShipEnginePackage
             'unit' => 'inch',
         ])));
 
-        $length = isset($dimensions['length']) && is_numeric($dimensions['length'])
-            ? (float) $dimensions['length']
+        $rawLength = $dimensions['length'] ?? ($dimensions['l'] ?? null);
+        $length = isset($rawLength) && is_numeric($rawLength)
+            ? (float) $rawLength
             : (isset($defaultDims['length']) ? (float) $defaultDims['length'] : 10.0);
 
-        $width = isset($dimensions['width']) && is_numeric($dimensions['width'])
-            ? (float) $dimensions['width']
+        $rawWidth = $dimensions['width'] ?? ($dimensions['w'] ?? null);
+        $width = isset($rawWidth) && is_numeric($rawWidth)
+            ? (float) $rawWidth
             : (isset($defaultDims['width']) ? (float) $defaultDims['width'] : 5.0);
 
-        $height = isset($dimensions['height']) && is_numeric($dimensions['height'])
-            ? (float) $dimensions['height']
+        $rawHeight = $dimensions['height'] ?? ($dimensions['h'] ?? null);
+        $height = isset($rawHeight) && is_numeric($rawHeight)
+            ? (float) $rawHeight
             : (isset($defaultDims['height']) ? (float) $defaultDims['height'] : 5.0);
 
-        $dimUnit = (string) ($dimensions['unit'] ?? ($defaultDims['unit'] ?? 'inch'));
+        $dimUnit = (string) ($dimensions['unit'] ?? ($dimensions['dimension_unit'] ?? ($dimensions['u'] ?? ($defaultDims['unit'] ?? 'inch'))));
 
         return new self(
             weightValue: round($weightValue * max(1, $quantity), 2),
@@ -96,9 +101,20 @@ final readonly class ShipEnginePackage
         );
     }
 
+    protected static function normalizeWeightUnit(string $unit): string
+    {
+        return match (strtolower(trim($unit))) {
+            'kg', 'kilogram', 'kilograms' => 'kilogram',
+            'g', 'gram', 'grams' => 'gram',
+            'oz', 'ounce', 'ounces' => 'ounce',
+            'lb', 'lbs', 'pound', 'pounds' => 'pound',
+            default => 'pound',
+        };
+    }
+
     protected static function normalizeDimensionUnit(string $unit): string
     {
-        return match (strtolower($unit)) {
+        return match (strtolower(trim($unit))) {
             'cm', 'centimeter', 'centimeters' => 'centimeter',
             'in', 'inch', 'inches' => 'inch',
             default => 'inch',

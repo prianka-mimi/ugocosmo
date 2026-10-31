@@ -284,11 +284,15 @@ class CartController extends Controller
                 ],
                 'summary' => [
                     'subtotal'              => $summary['subtotal'],
+                    'sub_total'             => $summary['subtotal'],
                     'shipping_total'        => $summary['shipping_total'],
+                    'shipping_amount'       => $summary['shipping_total'],
+                    'shipping_fee'          => $summary['shipping_total'],
                     'local_shipping'        => $summary['local_shipping'],
                     'aliexpress_shipping'   => $summary['aliexpress_shipping'],
                     'buyer_fee'             => 0.00,
                     'total'                 => $summary['total'],
+                    'total_amount'          => $summary['total'],
                     'currency'              => 'USD',
                 ],
             ];

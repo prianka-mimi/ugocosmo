@@ -167,6 +167,9 @@ class CheckoutManager
                         $selectedServiceCode  = $selectedServiceCode  ?? ($snap['service_code']  ?? null);
                         $selectedServiceName  = $selectedServiceName  ?? ($snap['service_name']  ?? null);
                         $selectedRateSnapshot = $selectedRateSnapshot ?? $snap;
+                        if (! isset($data['shipping_amount']) && isset($snap['shipping_amount'])) {
+                            $data['shipping_amount'] = (float) $snap['shipping_amount'];
+                        }
                         if (! isset($data['shipping_method']) && ! empty($snap['shipping_method'])) {
                             $normalizedRequestedMethod = ShippingOptionDTO::normalizeKey($snap['shipping_method']) ?? $normalizedRequestedMethod;
                         }
@@ -190,11 +193,26 @@ class CheckoutManager
                             ShippingOptionDTO::LOCAL_SHIPPING,
                         ], true)) {
                             $localShipping = 0.00;
+                        } elseif (isset($data['shipping_amount']) && is_numeric($data['shipping_amount'])) {
+                            $localShipping = round((float) $data['shipping_amount'], 2);
                         } elseif ($cartSelectedShipping && isset($cartSelectedShipping['shipping_amount'])) {
                             $localShipping = round((float) $cartSelectedShipping['shipping_amount'], 2);
-                        } elseif (isset($data['shipping_amount'])) {
-                            $localShipping = round((float) $data['shipping_amount'], 2);
-                        } else {
+                        } elseif (! empty($shippingAddress) && ! empty($shippingAddress['line1'])) {
+                            try {
+                                $shipEngineService = app(\App\Services\ShipEngineService::class);
+                                $liveRates = $shipEngineService->calculateRatesForPayload($localItems, $shippingAddress);
+                                if (! empty($liveRates)) {
+                                    $matched = collect($liveRates)->first(function ($r) use ($shippingMethod) {
+                                        return ($r['shipping_option_key'] ?? '') === $shippingMethod || ($r['service_code'] ?? '') === $shippingMethod;
+                                    }) ?? $liveRates[0];
+                                    $localShipping = round((float) ($matched['shipping_amount'] ?? 0), 2);
+                                }
+                            } catch (\Throwable $e) {
+                                Log::info('Checkout live rate calculate fallback: ' . $e->getMessage());
+                            }
+                        }
+
+                        if ($localShipping <= 0.00 && ! in_array($shippingMethod, [ShippingOptionDTO::FREE_SHIPPING, ShippingOptionDTO::LOCAL_PICKUP, ShippingOptionDTO::LOCAL_SHIPPING], true)) {
                             $localShipping = round($localItems->sum(fn ($i) => (float) $i->product->getShippingOptionCost($shippingMethod)), 2);
                         }
                     }
@@ -748,8 +766,8 @@ class CheckoutManager
             ];
         }
 
-        // Available shipping options across all products in checkout
-        $availableShippingOptions = $this->computeShippingOptionsForItems($cartItems);
+        // Available shipping options across all products in checkout (calculated with destination address, product dimensions, and weights)
+        $availableShippingOptions = $this->computeShippingOptionsForItems($cartItems, $selectedAddress);
 
         // Requested or default shipping method
         $requestedMethod = $params['shipping_method'] ?? null;
@@ -779,7 +797,20 @@ class CheckoutManager
             }
         }
 
-        if ($cartSelectedShipping && isset($cartSelectedShipping['shipping_amount'])) {
+        // Check if a specific rate was selected or cached
+        $selectedRateId = $params['selected_rate_id'] ?? ($params['rate_id'] ?? null);
+        $cachedRateSnap = null;
+        if ($selectedRateId) {
+            $userProfileId = $profile->id ?? $user->id;
+            $cachedRates = \Illuminate\Support\Facades\Cache::get("checkout:rates:user:{$userProfileId}", []);
+            $cachedRateSnap = $cachedRates[$selectedRateId] ?? null;
+        }
+
+        if (isset($params['shipping_amount']) && is_numeric($params['shipping_amount'])) {
+            $shippingAmount = round((float) $params['shipping_amount'], 2);
+        } elseif ($cachedRateSnap && isset($cachedRateSnap['shipping_amount'])) {
+            $shippingAmount = round((float) $cachedRateSnap['shipping_amount'], 2);
+        } elseif ($cartSelectedShipping && isset($cartSelectedShipping['shipping_amount'])) {
             $requestedMethod = $cartSelectedShipping['shipping_method'] ?? $requestedMethod;
             if (in_array($requestedMethod, [
                 ShippingOptionDTO::FREE_SHIPPING,
@@ -851,9 +882,19 @@ class CheckoutManager
                 'phone' => $a->phone,
                 'is_default' => (bool) $a->is_default,
             ])->values()->all(),
+            'subtotal' => $subtotal,
+            'sub_total' => $subtotal,
+            'shipping_amount' => $shippingAmount,
+            'shipping_fee' => $shippingAmount,
+            'shipping_total' => $shippingAmount,
+            'total' => $totalAmount,
+            'total_amount' => $totalAmount,
             'pricing_summary' => [
                 'subtotal' => $subtotal,
+                'sub_total' => $subtotal,
                 'shipping_amount' => $shippingAmount,
+                'shipping_fee' => $shippingAmount,
+                'shipping_total' => $shippingAmount,
                 'buyer_fee' => 0.00,
                 'buyer_fee_rate' => '0%',
                 'platform_fee' => 0.00,
@@ -861,6 +902,7 @@ class CheckoutManager
                 'seller_fee' => $sellerFee,
                 'seller_fee_rate' => '2.5%',
                 'tax_amount' => 0.00,
+                'total' => $totalAmount,
                 'total_amount' => $totalAmount,
                 'currency' => 'USD',
             ],
@@ -876,10 +918,11 @@ class CheckoutManager
 
     /**
      * Compute intersection of available shipping options across given items.
+     * Accurately factors in destination address, origin ship_from, product dimensions, and weights.
      *
      * @return array<int, array<string, mixed>>
      */
-    public function computeShippingOptionsForItems(iterable $items): array
+    public function computeShippingOptionsForItems(iterable $items, ?array $destinationAddress = null): array
     {
         $products = collect($items)->filter(fn ($item) => ! empty($item->product))->map(fn ($item) => $item->product);
 
@@ -902,23 +945,46 @@ class CheckoutManager
             $intersection = [ShippingOptionDTO::STANDARD_SHIPPING];
         }
 
-        // 2. Build DTO array with total cost for each option across all items
+        // 2. Query live courier rates if destination address is available
+        $liveRates = [];
+        if (! empty($destinationAddress) && ! empty($destinationAddress['line1'])) {
+            try {
+                $shipEngineService = app(\App\Services\ShipEngineService::class);
+                $liveRates = $shipEngineService->calculateRatesForPayload($items, $destinationAddress);
+            } catch (\Throwable $e) {
+                Log::info('computeShippingOptionsForItems live rate calculation: ' . $e->getMessage());
+            }
+        }
+
+        // 3. Build DTO array with accurate calculated cost for each option across all items
         $results = [];
         foreach ($intersection as $optionKey) {
             $totalCost = 0.00;
-            if (! in_array($optionKey, [
+            if (in_array($optionKey, [
                 ShippingOptionDTO::FREE_SHIPPING,
                 ShippingOptionDTO::LOCAL_PICKUP,
                 ShippingOptionDTO::LOCAL_SHIPPING,
             ], true)) {
-                foreach ($items as $item) {
-                    if ($item->product) {
-                        $totalCost += $item->product->getShippingOptionCost($optionKey);
+                $totalCost = 0.00;
+            } else {
+                // If live courier rate exists for this option key, use the lowest rate
+                $matchedLiveRates = array_filter($liveRates, function ($r) use ($optionKey) {
+                    $rateKey = $r['shipping_option_key'] ?? ($r['service_code'] ?? '');
+                    return $rateKey === $optionKey;
+                });
+
+                if (! empty($matchedLiveRates)) {
+                    $totalCost = (float) min(array_column($matchedLiveRates, 'shipping_amount'));
+                } else {
+                    foreach ($items as $item) {
+                        if ($item->product) {
+                            $totalCost += $item->product->getShippingOptionCost($optionKey);
+                        }
                     }
                 }
             }
 
-            $dto = ShippingOptionDTO::make($optionKey, $totalCost);
+            $dto = ShippingOptionDTO::make($optionKey, round($totalCost, 2));
             $results[] = $dto->toArray();
         }
 

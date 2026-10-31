@@ -70,7 +70,7 @@ class CheckoutController extends Controller
             $user      = Auth::guard('jwt')->user();
             $profileId = $user->profile ? (int) $user->profile->id : (int) $user->id;
 
-            // Resolve address
+            // Resolve address: check address_id, then shipping_address payload, then direct query fields, then default saved address
             $shipTo = null;
             if ($request->filled('address_id')) {
                 $saved = SavedAddress::where('id', (int) $request->input('address_id'))
@@ -88,6 +88,38 @@ class CheckoutController extends Controller
                         'phone'       => $saved->phone,
                     ];
                 }
+            }
+
+            if (! $shipTo && $request->has('shipping_address') && ! empty($request->input('shipping_address'))) {
+                $raw = $request->input('shipping_address');
+                if (is_string($raw)) {
+                    $raw = json_decode($raw, true) ?? $raw;
+                }
+                if (is_array($raw)) {
+                    $shipTo = [
+                        'name'        => $raw['name'] ?? ($raw['full_name'] ?? ($user->profile?->full_name ?: $user->name)),
+                        'line1'       => $raw['line1'] ?? ($raw['address_line1'] ?? ($raw['street'] ?? '')),
+                        'line2'       => $raw['line2'] ?? ($raw['address_line2'] ?? null),
+                        'city'        => $raw['city'] ?? ($raw['city_locality'] ?? ''),
+                        'state'       => $raw['state'] ?? ($raw['state_province'] ?? ''),
+                        'postal_code' => $raw['postal_code'] ?? ($raw['zip'] ?? ''),
+                        'country'     => $raw['country'] ?? ($raw['country_code'] ?? 'US'),
+                        'phone'       => $raw['phone'] ?? null,
+                    ];
+                }
+            }
+
+            if (! $shipTo && ($request->filled('line1') || $request->filled('address_line1') || $request->filled('city') || $request->filled('country'))) {
+                $shipTo = [
+                    'name'        => $request->input('name') ?: ($user->profile?->full_name ?: $user->name),
+                    'line1'       => $request->input('line1') ?: $request->input('address_line1'),
+                    'line2'       => $request->input('line2') ?: $request->input('address_line2'),
+                    'city'        => $request->input('city') ?: $request->input('city_locality'),
+                    'state'       => $request->input('state') ?: $request->input('state_province'),
+                    'postal_code' => $request->input('postal_code') ?: $request->input('zip'),
+                    'country'     => $request->input('country') ?: ($request->input('country_code') ?: 'US'),
+                    'phone'       => $request->input('phone'),
+                ];
             }
 
             if (! $shipTo) {
@@ -140,10 +172,24 @@ class CheckoutController extends Controller
 
                 $this->cacheRates($profileId, $rates);
 
+                $unitPrice = (float) $product->price;
+                $subtotal = round($unitPrice * $qty, 2);
+                $total = round($subtotal + $cost, 2);
+
                 return ApiResponse::success([
                     'product_id'      => $product->id,
                     'shipping_method' => $canonical,
                     'address_used'    => $shipTo,
+                    'unit_price'      => $unitPrice,
+                    'quantity'        => $qty,
+                    'subtotal'        => $subtotal,
+                    'sub_total'       => $subtotal,
+                    'shipping_fee'    => $cost,
+                    'shipping_amount' => $cost,
+                    'shipping_total'  => $cost,
+                    'total'           => $total,
+                    'total_amount'    => $total,
+                    'currency'        => 'USD',
                     'rates'           => $rates,
                     'rates_count'     => count($rates),
                     'starting_from'   => $cost,
@@ -199,13 +245,28 @@ class CheckoutController extends Controller
 
                 $this->cacheRates($profileId, $rates);
 
+                $unitPrice = (float) $product->price;
+                $subtotal = round($unitPrice * $qty, 2);
+                $shippingAmount = round((float) $rates[0]['shipping_amount'], 2);
+                $total = round($subtotal + $shippingAmount, 2);
+
                 return ApiResponse::success([
                     'product_id'      => $product->id,
                     'shipping_method' => $canonical,
                     'address_used'    => $shipTo,
+                    'unit_price'      => $unitPrice,
+                    'quantity'        => $qty,
+                    'subtotal'        => $subtotal,
+                    'sub_total'       => $subtotal,
+                    'shipping_fee'    => $shippingAmount,
+                    'shipping_amount' => $shippingAmount,
+                    'shipping_total'  => $shippingAmount,
+                    'total'           => $total,
+                    'total_amount'    => $total,
+                    'currency'        => 'USD',
                     'rates'           => $rates,
                     'rates_count'     => count($rates),
-                    'starting_from'   => round((float) $rates[0]['shipping_amount'], 2),
+                    'starting_from'   => $shippingAmount,
                 ], 'Carriers and rates retrieved.');
             }
 
@@ -228,13 +289,28 @@ class CheckoutController extends Controller
 
                 $this->cacheRates($profileId, $rates);
 
+                $unitPrice = (float) $product->price;
+                $subtotal = round($unitPrice * $qty, 2);
+                $shippingAmount = round((float) $rates[0]['shipping_amount'], 2);
+                $total = round($subtotal + $shippingAmount, 2);
+
                 return ApiResponse::success([
                     'product_id'      => $product->id,
                     'shipping_method' => $canonical,
                     'address_used'    => $shipTo,
+                    'unit_price'      => $unitPrice,
+                    'quantity'        => $qty,
+                    'subtotal'        => $subtotal,
+                    'sub_total'       => $subtotal,
+                    'shipping_fee'    => $shippingAmount,
+                    'shipping_amount' => $shippingAmount,
+                    'shipping_total'  => $shippingAmount,
+                    'total'           => $total,
+                    'total_amount'    => $total,
+                    'currency'        => 'USD',
                     'rates'           => $rates,
                     'rates_count'     => count($rates),
-                    'starting_from'   => round((float) $rates[0]['shipping_amount'], 2),
+                    'starting_from'   => $shippingAmount,
                 ], 'Carriers and rates retrieved.');
             }
 
@@ -364,13 +440,28 @@ class CheckoutController extends Controller
 
             $this->cacheRates($profileId, $rates);
 
+            $unitPrice = (float) $product->price;
+            $subtotal = round($unitPrice * $qty, 2);
+            $shippingAmount = round((float) $startingFrom, 2);
+            $total = round($subtotal + $shippingAmount, 2);
+
             return ApiResponse::success([
                 'product_id'      => $product->id,
                 'shipping_method' => $canonical,
                 'address_used'    => $shipTo,
+                'unit_price'      => $unitPrice,
+                'quantity'        => $qty,
+                'subtotal'        => $subtotal,
+                'sub_total'       => $subtotal,
+                'shipping_fee'    => $shippingAmount,
+                'shipping_amount' => $shippingAmount,
+                'shipping_total'  => $shippingAmount,
+                'total'           => $total,
+                'total_amount'    => $total,
+                'currency'        => $rates[0]['currency'] ?? ($product->currency ?: 'USD'),
                 'rates'           => $rates,
                 'rates_count'     => count($rates),
-                'starting_from'   => round((float) $startingFrom, 2),
+                'starting_from'   => $shippingAmount,
             ], 'Carriers and rates retrieved.');
         } catch (Throwable $e) {
             Log::error('CheckoutController carriersAndRates failed: ' . $e->getMessage());

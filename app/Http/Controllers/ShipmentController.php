@@ -452,18 +452,37 @@ class ShipmentController extends Controller
                 }
             }
 
-            if (! $shipTo && $request->filled('ship_to') && is_array($request->input('ship_to'))) {
-                $raw = $request->input('ship_to');
+            if (! $shipTo && ($request->filled('ship_to') || $request->filled('shipping_address'))) {
+                $raw = $request->input('ship_to') ?? $request->input('shipping_address');
+                if (is_string($raw)) {
+                    $raw = json_decode($raw, true) ?? $raw;
+                }
+                if (is_array($raw)) {
+                    $shipTo = [
+                        'id' => null,
+                        'name' => $raw['name'] ?? ($user->profile?->full_name ?: $user->name),
+                        'line1' => $raw['line1'] ?? ($raw['address_line1'] ?? ($raw['street'] ?? '')),
+                        'line2' => $raw['line2'] ?? ($raw['address_line2'] ?? null),
+                        'city' => $raw['city'] ?? ($raw['city_locality'] ?? ''),
+                        'state' => $raw['state'] ?? ($raw['state_province'] ?? ''),
+                        'postal_code' => $raw['postal_code'] ?? ($raw['postalCode'] ?? ($raw['zip'] ?? '')),
+                        'country' => $raw['country'] ?? ($raw['country_code'] ?? 'US'),
+                        'phone' => $raw['phone'] ?? null,
+                    ];
+                }
+            }
+
+            if (! $shipTo && ($request->filled('line1') || $request->filled('address_line1') || $request->filled('city') || $request->filled('country'))) {
                 $shipTo = [
                     'id' => null,
-                    'name' => $raw['name'] ?? ($user->profile?->full_name ?: $user->name),
-                    'line1' => $raw['line1'] ?? ($raw['address_line1'] ?? ''),
-                    'line2' => $raw['line2'] ?? ($raw['address_line2'] ?? null),
-                    'city' => $raw['city'] ?? ($raw['city_locality'] ?? ''),
-                    'state' => $raw['state'] ?? ($raw['state_province'] ?? ''),
-                    'postal_code' => $raw['postal_code'] ?? ($raw['postalCode'] ?? ($raw['zip'] ?? '')),
-                    'country' => $raw['country'] ?? ($raw['country_code'] ?? 'US'),
-                    'phone' => $raw['phone'] ?? null,
+                    'name' => $request->input('name') ?: ($user->profile?->full_name ?: $user->name),
+                    'line1' => $request->input('line1') ?: $request->input('address_line1'),
+                    'line2' => $request->input('line2') ?: $request->input('address_line2'),
+                    'city' => $request->input('city') ?: $request->input('city_locality'),
+                    'state' => $request->input('state') ?: $request->input('state_province'),
+                    'postal_code' => $request->input('postal_code') ?: $request->input('zip'),
+                    'country' => $request->input('country') ?: ($request->input('country_code') ?: 'US'),
+                    'phone' => $request->input('phone'),
                 ];
             }
 

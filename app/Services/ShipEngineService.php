@@ -1564,24 +1564,34 @@ class ShipEngineService
                     $line1 = $trimmed;
 
                     if ($count >= 2) {
-                        $line1 = $parts[0];
                         $lastRemaining = $parts[$count - 1];
 
-                        // Check if lastRemaining has "State Postal" or "City Postal"
-                        if (preg_match('/^(.*?)\s*(\b\d{4,6}\b)$/', $lastRemaining, $m)) {
-                            $city = trim($m[1]) !== '' ? trim($m[1]) : ($parts[1] ?? 'City');
-                            $postal = $m[2];
-                        } else {
-                            $city = $lastRemaining;
+                        // Check if lastRemaining has "State Postal" e.g. "NY 10001" or "Dhaka 1205"
+                        if (preg_match('/^([A-Za-z\s]{2,})\s+([A-Za-z0-9\-]{3,10})$/', $lastRemaining, $m)) {
+                            $state = trim($m[1]);
+                            $postal = trim($m[2]);
+                        } elseif (preg_match('/^[A-Za-z0-9\s\-]{3,10}$/', $lastRemaining) && preg_match('/\d/', $lastRemaining)) {
+                            $postal = $lastRemaining;
+                        } elseif (preg_match('/^[A-Za-z\s]{2,}$/', $lastRemaining)) {
+                            $state = $lastRemaining;
                         }
 
                         if ($count >= 3) {
-                            $line1 = implode(', ', array_slice($parts, 0, $count - 2));
                             $city = $parts[$count - 2];
+                            $line1 = implode(', ', array_slice($parts, 0, $count - 2));
+                        } else {
+                            $line1 = $parts[0];
+                            if (! $state && $postal === '00000') {
+                                $city = $lastRemaining;
+                            }
                         }
                     } elseif ($count === 1) {
                         $line1 = $parts[0];
                         $city = $parts[0];
+                    }
+
+                    if ($countryCode === 'US' && ! empty($state)) {
+                        $state = ShipEngineAddress::normalizeUsState($state) ?? $state;
                     }
 
                     try {
@@ -1601,23 +1611,30 @@ class ShipEngineService
         }
 
         if (is_array($data)) {
-            $line1 = trim((string) ($data['line1'] ?? $data['address_line1'] ?? ''));
+            $line1 = trim((string) ($data['line1'] ?? $data['address_line1'] ?? $data['street'] ?? ''));
             $city = trim((string) ($data['city'] ?? $data['city_locality'] ?? ''));
-            $postal = trim((string) ($data['postal_code'] ?? '00000'));
+            $postal = trim((string) ($data['postal_code'] ?? $data['zip'] ?? '00000'));
             $country = trim((string) ($data['country'] ?? $data['country_code'] ?? ($sellerCountryFallback ?? 'US')));
             $name = trim((string) ($data['name'] ?? $fallbackName));
+            $state = trim((string) ($data['state'] ?? $data['state_province'] ?? ''));
 
             if ($line1 !== '' && $city !== '') {
                 try {
+                    $countryCode = ShipEngineAddress::normalizeCountryCode($country);
+                    $stateProvince = $state !== '' ? $state : null;
+                    if ($countryCode === 'US' && $stateProvince !== null) {
+                        $stateProvince = ShipEngineAddress::normalizeUsState($stateProvince) ?? $stateProvince;
+                    }
+
                     return new ShipEngineAddress(
                         name: $name !== '' ? $name : $fallbackName,
                         addressLine1: $line1,
                         cityLocality: $city,
                         postalCode: $postal !== '' ? $postal : '00000',
-                        countryCode: ShipEngineAddress::normalizeCountryCode($country),
+                        countryCode: $countryCode,
                         companyName: isset($data['company_name']) ? (string) $data['company_name'] : null,
-                        addressLine2: isset($data['line2']) ? (string) $data['line2'] : null,
-                        stateProvince: isset($data['state']) ? (string) $data['state'] : null,
+                        addressLine2: isset($data['line2']) ? (string) $data['line2'] : ($data['address_line2'] ?? null),
+                        stateProvince: $stateProvince,
                         phone: ! empty($data['phone']) ? (string) $data['phone'] : '+1 555-555-5555',
                         email: isset($data['email']) ? (string) $data['email'] : null,
                     );
