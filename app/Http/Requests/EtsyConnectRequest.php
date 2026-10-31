@@ -14,7 +14,7 @@ class EtsyConnectRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'app_redirect' => ['sometimes', 'nullable', 'string', 'url', 'max:2048'],
+            'app_redirect' => ['sometimes', 'nullable', 'string', 'url'],
         ];
     }
 }

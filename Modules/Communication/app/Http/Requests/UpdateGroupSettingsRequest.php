@@ -24,7 +24,7 @@ class UpdateGroupSettingsRequest extends BaseApiRequest
     {
         return [
             'name' => ['nullable', 'string', 'max:255'],
-            'avatar' => ['nullable', 'file', 'image', 'max:2048'], // Max 2MB
+            'avatar' => ['nullable', 'file', 'image'], // Max 2MB
             'notification' => ['nullable', 'boolean'],
             'receive_audio_call' => ['nullable', 'boolean'],
         ];

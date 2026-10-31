@@ -28,7 +28,7 @@ class ProfileUpdateRequest extends FormRequest
             'is_default' => ['nullable', 'boolean'],
             'occupation' => ['nullable', 'string', 'max:255'],
             'bio' => ['nullable', 'string'],
-            'avatar' => ['nullable', 'image', 'max:2048'],
+            'avatar' => ['nullable', 'image'],
         ];
     }
 

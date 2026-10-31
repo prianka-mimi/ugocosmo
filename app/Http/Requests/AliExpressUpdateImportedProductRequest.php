@@ -22,7 +22,7 @@ class AliExpressUpdateImportedProductRequest extends FormRequest
             'category_id' => ['sometimes', 'nullable', 'integer', 'exists:product_categories,id'],
             'featured_image' => ['sometimes', 'nullable', 'image', 'max:5120'],
             'images' => ['sometimes', 'array', 'max:10'],
-            'images.*' => ['string', 'max:2048'],
+            'images.*' => ['string'],
             'product_variants' => ['sometimes', 'array'],
         ];
     }

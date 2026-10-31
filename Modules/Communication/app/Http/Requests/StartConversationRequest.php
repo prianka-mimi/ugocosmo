@@ -17,7 +17,7 @@ class StartConversationRequest extends BaseApiRequest
             'participant_ids' => ['nullable', 'array', 'min:1', 'required_without:conversation_id'],
             'participant_ids.*' => ['integer', 'distinct', 'exists:users,id'],
             // 'name' => ['nullable', 'string', 'max:255'],
-            'avatar' => ['nullable', 'string', 'max:2048'],
+            'avatar' => ['nullable', 'string'],
             'message' => ['nullable', 'string'],
             'message_type' => ['nullable', 'string', Rule::in(['wave', 'text', 'image', 'file'])],
         ];

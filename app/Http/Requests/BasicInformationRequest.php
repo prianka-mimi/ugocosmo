@@ -14,7 +14,7 @@ class BasicInformationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'profile_image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif', 'max:2048'],
+            'profile_image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif'],
             'occupation' => ['nullable', 'string', 'max:255'],
             'dob' => ['nullable', 'date', 'before_or_equal:today'],
             'marital_status' => ['nullable', 'string', 'max:50'],

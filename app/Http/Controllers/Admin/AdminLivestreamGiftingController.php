@@ -103,7 +103,7 @@ class AdminLivestreamGiftingController extends Controller
             $request->validate([
                 'title' => ['required', 'string', 'max:255'],
                 'coin_cost' => ['required', 'integer', 'min:0'],
-                'icon_file' => ['required', 'file', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:2048'],
+                'icon_file' => ['required', 'file', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp'],
             ]);
 
             $iconUrl = '';
@@ -224,7 +224,7 @@ class AdminLivestreamGiftingController extends Controller
             $request->validate([
                 'title' => ['required', 'string', 'max:255'],
                 'coin_cost' => ['required', 'integer', 'min:0'],
-                'icon_file' => ['nullable', 'file', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp', 'max:2048'],
+                'icon_file' => ['nullable', 'file', 'image', 'mimes:jpeg,png,jpg,gif,svg,webp'],
             ]);
 
             $iconUrl = $gift->getRawOriginal('icon_url');
