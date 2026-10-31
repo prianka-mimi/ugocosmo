@@ -70,16 +70,16 @@ class ProductResource extends JsonResource
             'product_variants' => $this->castVariants($this->product_variants ?? []),
 
             // ── 2. Details ─────────────────────────────────────────
+            'brand'            => $this->brand ?? ($src['brand'] ?? null),
+            'sku'              => $this->sku ?? ($this->aliexpress_sku ?? ($src['skus'][0]['sku_code'] ?? null)),
+            'ean_upc'          => $this->ean_upc,
+            'tags'             => $this->whenLoaded('tags', fn() => $this->tags->pluck('name')),
             'specifications'   => $this->specifications ?? (! empty($src['attributes']) && is_array($src['attributes']) ? implode("\n", array_filter(array_map(fn($a) => isset($a['name'], $a['value']) ? "{$a['name']}: {$a['value']}" : null, $src['attributes']))) : null),
             'features_benefits' => $this->features_benefits,
             'weight'           => $this->weight ? (float) $this->weight : ($src['package']['weight'] ?? ($src['weight'] ?? null)),
             'wholesale_product' => (bool) $this->wholesale_product,
             'moq'              => $this->moq ? (int) $this->moq : null,
             'bulk_pricing'     => $this->castBulkPricing($this->bulk_pricing ?? []),
-            'brand'            => $this->brand ?? ($src['brand'] ?? null),
-            'sku'              => $this->sku ?? ($this->aliexpress_sku ?? ($src['skus'][0]['sku_code'] ?? null)),
-            'ean_upc'          => $this->ean_upc,
-            'tags'             => $this->whenLoaded('tags', fn() => $this->tags->pluck('name')),
 
             // ── 3. Shipping ────────────────────────────────────────
             'ship_from_address'  => $this->ship_from_address,
