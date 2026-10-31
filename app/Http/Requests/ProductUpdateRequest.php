@@ -163,6 +163,25 @@ class ProductUpdateRequest extends FormRequest
             return null;
         }
 
+        // Support columnar arrays: ['min_quantity' => [...], 'price_per_unit' => [...]]
+        if (isset($raw['min_quantity']) && is_array($raw['min_quantity']) && isset($raw['price_per_unit']) && is_array($raw['price_per_unit'])) {
+            $paired = [];
+            $count = max(count($raw['min_quantity']), count($raw['price_per_unit']));
+            for ($i = 0; $i < $count; $i++) {
+                $entry = [];
+                if (isset($raw['min_quantity'][$i])) {
+                    $entry['min_quantity'] = is_numeric($raw['min_quantity'][$i]) ? (int) $raw['min_quantity'][$i] : $raw['min_quantity'][$i];
+                }
+                if (isset($raw['price_per_unit'][$i])) {
+                    $entry['price_per_unit'] = is_numeric($raw['price_per_unit'][$i]) ? (float) $raw['price_per_unit'][$i] : $raw['price_per_unit'][$i];
+                }
+                if (! empty($entry)) {
+                    $paired[] = $entry;
+                }
+            }
+            return ! empty($paired) ? $paired : null;
+        }
+
         // Check if items are already well-formed pairs
         $allPaired = true;
         foreach ($raw as $item) {
