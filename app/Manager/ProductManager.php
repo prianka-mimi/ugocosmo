@@ -808,7 +808,7 @@ class ProductManager
             'category_id' => $product->category_id,
             'stock_quantity' => $product->stock_quantity,
             'product_type' => strtolower((string) ($product->product_type ?? '')) === 'digital' ? 'digital' : 'physical',
-            'condition' => $product->condition ?? ($product->source === 'aliexpress' ? 'new' : null),
+            'condition' => in_array(strtolower((string) ($product->condition ?? '')), ['new', 'used', 'refurbished'], true) ? strtolower((string) $product->condition) : 'new',
             'product_variants' => $product->product_variants ?? [],
             'specifications' => $product->specifications
                 ?? (! empty($src['attributes']) && is_array($src['attributes'])

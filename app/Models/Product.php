@@ -663,6 +663,24 @@ class Product extends Model
     }
 
     /**
+     * Strictly normalize condition attribute to either 'new', 'used', or 'refurbished'.
+     */
+    public function getConditionAttribute(?string $value): string
+    {
+        $val = strtolower((string) $value);
+        return in_array($val, ['new', 'used', 'refurbished'], true) ? $val : 'new';
+    }
+
+    /**
+     * Strictly sanitize condition before saving to database.
+     */
+    public function setConditionAttribute(?string $value): void
+    {
+        $val = strtolower((string) $value);
+        $this->attributes['condition'] = in_array($val, ['new', 'used', 'refurbished'], true) ? $val : 'new';
+    }
+
+    /**
      * Check if the product is a digital or non-physical item.
      */
     public function isDigital(): bool

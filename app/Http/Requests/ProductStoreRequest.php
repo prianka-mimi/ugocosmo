@@ -23,6 +23,16 @@ class ProductStoreRequest extends FormRequest
                 'product_type' => 'physical',
             ]);
         }
+
+        if ($this->has('condition') && $this->input('condition') !== null) {
+            $this->merge([
+                'condition' => strtolower(trim((string) $this->input('condition'))),
+            ]);
+        } else {
+            $this->merge([
+                'condition' => 'new',
+            ]);
+        }
     }
 
     public function rules(): array

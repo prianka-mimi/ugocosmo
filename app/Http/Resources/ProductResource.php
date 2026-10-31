@@ -66,7 +66,7 @@ class ProductResource extends JsonResource
             'category'         => $this->whenLoaded('category', fn() => new ProductCategoryResource($this->category)),
             'stock_quantity'   => (int) $this->stock_quantity,
             'product_type'     => strtolower((string) ($this->product_type ?? '')) === 'digital' ? 'digital' : 'physical',
-            'condition'        => $this->condition ?? ($this->source === 'aliexpress' ? 'new' : null),
+            'condition'        => in_array(strtolower((string) ($this->condition ?? '')), ['new', 'used', 'refurbished'], true) ? strtolower((string) $this->condition) : 'new',
             'product_variants' => $this->castVariants($this->product_variants ?? []),
 
             // ── 2. Details ─────────────────────────────────────────

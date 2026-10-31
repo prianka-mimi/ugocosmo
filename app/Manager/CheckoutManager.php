@@ -724,7 +724,7 @@ class CheckoutManager
                     'stock_quantity' => (int) ($product->stock_quantity ?? 0),
                     'in_stock' => (int) ($product->stock_quantity ?? 0) >= $item->quantity,
                     'product_type' => strtolower((string) ($product->product_type ?? '')) === 'digital' ? 'digital' : 'physical',
-                    'condition' => $product->condition ?? ($product->source === 'aliexpress' ? 'new' : null),
+                    'condition' => in_array(strtolower((string) ($product->condition ?? '')), ['new', 'used', 'refurbished'], true) ? strtolower((string) $product->condition) : 'new',
                     'product_variants' => $product->product_variants ?? [],
                     'available_shipping_options' => array_map(fn ($opt) => $opt->toArray(), $product->getEnabledShippingOptions()),
                     'shipping_strategy' => $product->shipping_strategy ?? 'manual',

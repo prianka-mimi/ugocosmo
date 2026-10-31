@@ -19,6 +19,12 @@ class ProductUpdateRequest extends FormRequest
                 'product_type' => strtolower(trim((string) $this->input('product_type'))),
             ]);
         }
+
+        if ($this->has('condition') && $this->input('condition') !== null) {
+            $this->merge([
+                'condition' => strtolower(trim((string) $this->input('condition'))),
+            ]);
+        }
     }
 
     public function rules(): array
