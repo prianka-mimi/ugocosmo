@@ -14,15 +14,21 @@ class ProductIndexRequest extends FormRequest
     protected function prepareForValidation(): void
     {
         if ($this->has('product_type') && $this->input('product_type') !== null) {
-            $this->merge([
-                'product_type' => strtolower(trim((string) $this->input('product_type'))),
-            ]);
+            $val = strtolower(trim((string) $this->input('product_type')));
+            if ($val === 'physical' || $val === 'digital') {
+                $this->merge(['product_type' => $val]);
+            } else {
+                $this->request->remove('product_type');
+            }
         }
 
         if ($this->has('condition') && $this->input('condition') !== null) {
-            $this->merge([
-                'condition' => strtolower(trim((string) $this->input('condition'))),
-            ]);
+            $val = strtolower(trim((string) $this->input('condition')));
+            if (in_array($val, ['new', 'used', 'refurbished'], true)) {
+                $this->merge(['condition' => $val]);
+            } else {
+                $this->request->remove('condition');
+            }
         }
     }
 

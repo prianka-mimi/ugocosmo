@@ -14,24 +14,33 @@ class ProductStoreRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
-        if ($this->has('product_type') && $this->input('product_type') !== null) {
-            $this->merge([
-                'product_type' => strtolower(trim((string) $this->input('product_type'))),
-            ]);
-        } else {
-            $this->merge([
-                'product_type' => 'physical',
-            ]);
+        $this->merge([
+            'product_type' => $this->normalizeProductType($this->input('product_type')),
+            'condition'    => $this->normalizeCondition($this->input('condition')),
+        ]);
+
+        if ($this->has('compare_at_price') && ($this->input('compare_at_price') === '' || $this->input('compare_at_price') === null)) {
+            $this->merge(['compare_at_price' => null]);
         }
 
-        if ($this->has('condition') && $this->input('condition') !== null) {
-            $this->merge([
-                'condition' => strtolower(trim((string) $this->input('condition'))),
-            ]);
-        } else {
-            $this->merge([
-                'condition' => 'new',
-            ]);
+        if ($this->has('weight') && ($this->input('weight') === '' || $this->input('weight') === null)) {
+            $this->merge(['weight' => null]);
+        }
+
+        if ($this->has('moq') && ($this->input('moq') === '' || $this->input('moq') === null)) {
+            $this->merge(['moq' => null]);
+        }
+
+        if ($this->has('wholesale_product') && $this->input('wholesale_product') === '') {
+            $this->merge(['wholesale_product' => null]);
+        }
+
+        if ($this->has('free_shipping_cost') && $this->input('free_shipping_cost') === '') {
+            $this->merge(['free_shipping_cost' => null]);
+        }
+
+        if ($this->has('local_shipping_cost') && $this->input('local_shipping_cost') === '') {
+            $this->merge(['local_shipping_cost' => null]);
         }
 
         if ($this->has('bulk_pricing')) {
@@ -79,6 +88,55 @@ class ProductStoreRequest extends FormRequest
         if ($this->has('video') && ! $this->hasFile('video') && ($this->input('video') === '' || is_string($this->input('video')))) {
             $this->request->remove('video');
         }
+    }
+
+    protected function normalizeProductType(mixed $raw): string
+    {
+        if ($raw === null) {
+            return 'physical';
+        }
+
+        $str = strtolower(trim((string) $raw));
+
+        if ($str === '' || $str === 'null' || $str === 'undefined' || $str === '0' || $str === 'false') {
+            return 'physical';
+        }
+
+        if (
+            str_contains($str, 'digital') ||
+            str_contains($str, 'virtual') ||
+            str_contains($str, 'download') ||
+            str_contains($str, 'service') ||
+            $str === '1' ||
+            $str === 'true'
+        ) {
+            return 'digital';
+        }
+
+        return 'physical';
+    }
+
+    protected function normalizeCondition(mixed $raw): string
+    {
+        if ($raw === null) {
+            return 'new';
+        }
+
+        $str = strtolower(trim((string) $raw));
+
+        if ($str === '' || $str === 'null' || $str === 'undefined') {
+            return 'new';
+        }
+
+        if (str_contains($str, 'refurb')) {
+            return 'refurbished';
+        }
+
+        if (str_contains($str, 'used') || str_contains($str, 'second')) {
+            return 'used';
+        }
+
+        return 'new';
     }
 
     protected function normalizeBulkPricing(mixed $raw): ?array
@@ -164,8 +222,8 @@ class ProductStoreRequest extends FormRequest
             'currency'             => ['nullable', 'string', 'max:10'],
             'stock_quantity'       => ['required', 'integer', 'min:0'],
             'category_id'          => ['required', 'integer', 'exists:product_categories,id'],
-            'product_type'         => ['required', 'string', 'in:physical,digital'],
-            'condition'            => ['required', 'string', 'in:new,used,refurbished'],
+            'product_type'         => ['nullable', 'string', 'in:physical,digital'],
+            'condition'            => ['nullable', 'string', 'in:new,used,refurbished'],
             'brand'                => ['nullable', 'string', 'max:255'],
             'ean_upc'              => ['nullable', 'string', 'max:100'],
             'tags'                 => ['nullable', 'array', 'max:15'],

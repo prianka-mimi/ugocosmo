@@ -11,6 +11,18 @@ class ProductCategoryUpdateRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('product_type') && $this->input('product_type') !== null) {
+            $str = strtolower(trim((string) $this->input('product_type')));
+            if (str_contains($str, 'digital') || str_contains($str, 'virtual')) {
+                $this->merge(['product_type' => 'digital']);
+            } else {
+                $this->merge(['product_type' => 'physical']);
+            }
+        }
+    }
+
     public function rules(): array
     {
         $categoryId = $this->route('productCategory')?->id;
