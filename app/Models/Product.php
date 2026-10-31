@@ -490,7 +490,8 @@ class Product extends Model
 
     /**
      * Resolve shipping cost for a given shipping option.
-     * Free Shipping, Local Delivery, and Local Pickup always have 0.00 shipping cost.
+     * Free Shipping and Local Store Pickup default to 0.00 unless configured.
+     * Heavy Item Pickup and Multi Item Pickup use configured tier costs, product shipping_cost, or standard defaults.
      */
     public function getShippingOptionCost(string $option): float
     {
@@ -499,14 +500,8 @@ class Product extends Model
             return (float) ($this->shipping_cost ?? 0.00);
         }
 
-        // Free shipping, local delivery, and local pickup always cost 0.00
-        if (in_array($canonical, [
-            ShippingOptionDTO::FREE_SHIPPING,
-            ShippingOptionDTO::LOCAL_SHIPPING,
-            ShippingOptionDTO::LOCAL_PICKUP,
-            ShippingOptionDTO::MULTI_ITEM_PICKUP,
-            ShippingOptionDTO::HEAVY_ITEM_PICKUP,
-        ], true) || str_ends_with($canonical, '_pickup')) {
+        // Free shipping is always 0.00
+        if ($canonical === ShippingOptionDTO::FREE_SHIPPING) {
             return 0.00;
         }
 
@@ -525,12 +520,39 @@ class Product extends Model
             }
         }
 
+        // In-store local pickup defaults to 0.00 if no explicit cost is set in tiers
+        if ($canonical === ShippingOptionDTO::LOCAL_PICKUP || ($canonical === ShippingOptionDTO::LOCAL_SHIPPING && empty($tiers['local_shipping_cost']))) {
+            return 0.00;
+        }
+
+        if (str_ends_with($canonical, '_pickup') && ! in_array($canonical, [ShippingOptionDTO::MULTI_ITEM_PICKUP, ShippingOptionDTO::HEAVY_ITEM_PICKUP], true)) {
+            return 0.00;
+        }
+
         $aliCost = $this->aliexpress_shipping_cost;
         if ($this->source === 'aliexpress' && $aliCost > 0) {
             return round((float) $aliCost, 2);
         }
 
-        return round((float) ($this->shipping_cost ?? 0.00), 2);
+        // Fallback to base product shipping_cost if present
+        if (isset($this->shipping_cost) && is_numeric($this->shipping_cost) && (float) $this->shipping_cost > 0) {
+            return round((float) $this->shipping_cost, 2);
+        }
+
+        if (isset($tiers['standard_shipping_cost']) && is_numeric($tiers['standard_shipping_cost']) && (float) $tiers['standard_shipping_cost'] > 0) {
+            return round((float) $tiers['standard_shipping_cost'], 2);
+        }
+
+        // Sensible non-zero baseline fallback for heavy items and multi items if no cost was set
+        if ($canonical === ShippingOptionDTO::HEAVY_ITEM_PICKUP) {
+            return 14.99;
+        }
+
+        if ($canonical === ShippingOptionDTO::MULTI_ITEM_PICKUP) {
+            return 7.99;
+        }
+
+        return 0.00;
     }
 
     /**

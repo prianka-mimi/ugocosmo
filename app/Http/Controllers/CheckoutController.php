@@ -151,28 +151,50 @@ class CheckoutController extends Controller
             }
 
             // Direct options (Pickups, Free Shipping, Local Delivery) — return directly without calling live courier APIs
-            $isPickup = str_ends_with($canonical, '_pickup') || in_array($canonical, [
-                ShippingOptionDTO::LOCAL_PICKUP,
-                ShippingOptionDTO::MULTI_ITEM_PICKUP,
-                ShippingOptionDTO::HEAVY_ITEM_PICKUP,
-            ], true);
+            $isStorePickup = in_array($canonical, [ShippingOptionDTO::LOCAL_PICKUP, 'local_pickup'], true);
+            $isDirectDelivery = in_array($canonical, [ShippingOptionDTO::FREE_SHIPPING, ShippingOptionDTO::LOCAL_SHIPPING], true);
+            $isSpecialPickup = in_array($canonical, [ShippingOptionDTO::MULTI_ITEM_PICKUP, ShippingOptionDTO::HEAVY_ITEM_PICKUP], true);
+            $isGenericPickup = str_ends_with($canonical, '_pickup');
 
-            if ($isPickup || in_array($canonical, [ShippingOptionDTO::FREE_SHIPPING, ShippingOptionDTO::LOCAL_SHIPPING], true)) {
+            if ($isStorePickup || $isDirectDelivery || $isSpecialPickup || $isGenericPickup) {
                 $cost = $product->getShippingOptionCost($canonical);
                 $dto  = ShippingOptionDTO::make($canonical, $cost);
+
+                $carrierId = match (true) {
+                    $canonical === ShippingOptionDTO::HEAVY_ITEM_PICKUP => 'heavy_freight',
+                    $canonical === ShippingOptionDTO::MULTI_ITEM_PICKUP => 'multi_item_carrier',
+                    $isStorePickup => 'local_pickup',
+                    default => 'direct_delivery',
+                };
+
+                $carrierName = match (true) {
+                    $canonical === ShippingOptionDTO::HEAVY_ITEM_PICKUP => 'Heavy Freight Logistics',
+                    $canonical === ShippingOptionDTO::MULTI_ITEM_PICKUP => 'Multi-Item Consolidated Delivery',
+                    $isStorePickup => 'Local Store Pickup',
+                    default => $dto->name,
+                };
+
+                $deliveryDays = match (true) {
+                    $canonical === ShippingOptionDTO::HEAVY_ITEM_PICKUP => 3,
+                    $canonical === ShippingOptionDTO::MULTI_ITEM_PICKUP => 2,
+                    $canonical === ShippingOptionDTO::FREE_SHIPPING => 7,
+                    $isStorePickup => 1,
+                    default => 2,
+                };
+
                 $rates = [[
                     'rate_id'               => 'direct-rate-' . $canonical . '-' . $product->id,
-                    'carrier_id'            => $isPickup ? 'local_pickup' : 'direct_delivery',
-                    'carrier_friendly_name' => $dto->name,
+                    'carrier_id'            => $carrierId,
+                    'carrier_friendly_name' => $carrierName,
                     'service_code'          => $canonical,
                     'service_name'          => $dto->name,
                     'shipping_method'       => $canonical,
                     'shipping_amount'       => round($dto->cost, 2),
                     'currency'              => 'USD',
-                    'delivery_days'         => $isPickup ? 1 : ($canonical === 'free_shipping' ? 7 : 2),
+                    'delivery_days'         => $deliveryDays,
                     'estimated_delivery'    => $dto->estimatedDelivery,
                     'shipping_option_key'   => $canonical,
-                    'trackable'             => ! $isPickup,
+                    'trackable'             => ! $isStorePickup,
                 ]];
 
                 $this->cacheRates($profileId, $rates);

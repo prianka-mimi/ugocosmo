@@ -1030,10 +1030,18 @@ class ProductManager
             $tiers['local_pickup_cost'] = 0.00;
         }
         if (in_array(ShippingOptionDTO::MULTI_ITEM_PICKUP, $enabledKeys, true)) {
-            $tiers['multi_item_pickup_cost'] = 0.00;
+            $tiers['multi_item_pickup_cost'] = isset($data['multi_item_pickup_cost']) && is_numeric($data['multi_item_pickup_cost'])
+                ? round((float) $data['multi_item_pickup_cost'], 2)
+                : (isset($tiers['multi_item_pickup_cost']) && is_numeric($tiers['multi_item_pickup_cost'])
+                    ? round((float) $tiers['multi_item_pickup_cost'], 2)
+                    : (isset($data['shipping_cost']) && is_numeric($data['shipping_cost']) ? round((float) $data['shipping_cost'], 2) : 7.99));
         }
         if (in_array(ShippingOptionDTO::HEAVY_ITEM_PICKUP, $enabledKeys, true)) {
-            $tiers['heavy_item_pickup_cost'] = 0.00;
+            $tiers['heavy_item_pickup_cost'] = isset($data['heavy_item_pickup_cost']) && is_numeric($data['heavy_item_pickup_cost'])
+                ? round((float) $data['heavy_item_pickup_cost'], 2)
+                : (isset($tiers['heavy_item_pickup_cost']) && is_numeric($tiers['heavy_item_pickup_cost'])
+                    ? round((float) $tiers['heavy_item_pickup_cost'], 2)
+                    : (isset($data['shipping_cost']) && is_numeric($data['shipping_cost']) ? round((float) $data['shipping_cost'], 2) : 14.99));
         }
 
         foreach ($enabledKeys as $optKey) {
