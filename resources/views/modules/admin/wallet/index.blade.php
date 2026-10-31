@@ -8,7 +8,7 @@
     <div class="card" style="text-align: center; border-left: 4px solid #16a34a;">
         <div style="font-size: 2rem; font-weight: 700; color: #16a34a;">${{ number_format($stats['total_commission'], 2) }}</div>
         <div style="font-size: 0.8125rem; font-weight: 600; color: #333; margin-top: 0.25rem;">Total Admin Commission</div>
-        <div style="font-size: 0.6875rem; color: #888; margin-top: 0.25rem;">2.5% platform fee on settled sales</div>
+        <div style="font-size: 0.6875rem; color: #888; margin-top: 0.25rem;">2.5% fee deducted from sellers (0% buyer fee)</div>
     </div>
 
     <div class="card" style="text-align: center; border-left: 4px solid var(--primary);">
@@ -43,7 +43,9 @@
     <div class="card-header">
         <div>
             <h3 style="margin-bottom: 0.25rem;">Platform Commission Ledger</h3>
-            <p style="font-size: 0.75rem; color: #888; margin: 0;">Order-by-order breakdown of the 2.5% platform commission automatically collected on each order.</p>
+            <p style="font-size: 0.75rem; color: #64748b; margin: 0;">
+                Order-by-order breakdown: <strong>2.5% processing fee is deducted from the seller's payout</strong> and retained by the platform. <strong>Buyers are charged 0% platform fee.</strong>
+            </p>
         </div>
         <form method="GET" action="{{ route('admin.wallet.index') }}" style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
             <div class="search-box">
@@ -79,9 +81,10 @@
                     <th>Seller</th>
                     <th>Buyer</th>
                     <th style="text-align: right;">Subtotal</th>
-                    <th style="text-align: right; background: #f0fdf4; color: #166534;">Admin Fee (2.5%)</th>
-                    <th style="text-align: right;">Seller Share (97.5%)</th>
-                    <th style="text-align: right;">Order Total</th>
+                    <th style="text-align: right; background: #fff1f2; color: #be123c;">Seller Fee (2.5% Deducted)</th>
+                    <th style="text-align: right; font-weight: 600;">Seller Payout (97.5%)</th>
+                    <th style="text-align: right; background: #f0fdf4; color: #166534;">Admin Kept (2.5%)</th>
+                    <th style="text-align: right;">Buyer Paid</th>
                     <th style="text-align: center;">Status</th>
                     <th style="width: 60px; text-align: center;">Action</th>
                 </tr>
@@ -120,11 +123,14 @@
                     <td style="text-align: right; font-weight: 500;">
                         ${{ number_format($subtotal, 2) }}
                     </td>
-                    <td style="text-align: right; font-weight: 700; background: #f0fdf4; color: #166534;">
-                        +${{ number_format($adminCommission, 2) }}
+                    <td style="text-align: right; font-weight: 600; background: #fff1f2; color: #be123c;">
+                        -${{ number_format($adminCommission, 2) }}
                     </td>
-                    <td style="text-align: right; font-weight: 500; color: #475569;">
+                    <td style="text-align: right; font-weight: 700; color: #0f172a;">
                         ${{ number_format($sellerNet, 2) }}
+                    </td>
+                    <td style="text-align: right; font-weight: 600; background: #f0fdf4; color: #166534;">
+                        ${{ number_format($adminCommission, 2) }}
                     </td>
                     <td style="text-align: right; font-weight: 600;">
                         ${{ number_format($order->total, 2) }}

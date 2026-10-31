@@ -25,9 +25,9 @@ class PlaceOrderService
                 'seller_id' => $cartData['seller_id'],
                 'status' => 'pending', // Marks order status as 'pending'
                 'subtotal' => $cartData['subtotal'],
-                'buyer_fee' => $cartData['buyer_fee'] ?? 0,
-                'seller_fee' => $cartData['seller_fee'] ?? 0,
-                'platform_fee_total' => ($cartData['buyer_fee'] ?? 0) + ($cartData['seller_fee'] ?? 0),
+                'buyer_fee' => 0.00,
+                'seller_fee' => $cartData['seller_fee'] ?? round(($cartData['subtotal'] ?? 0) * 0.025, 2),
+                'platform_fee_total' => 0.00,
                 'tax_amount' => $cartData['tax_amount'] ?? 0,
                 'shipping_amount' => $cartData['shipping_amount'] ?? 0,
                 'total' => $cartData['total'],

@@ -19,17 +19,29 @@
             </tr>
             <tr><td style="font-weight: 500;">Subtotal</td><td>${{ number_format($order->subtotal, 2) }}</td></tr>
             <tr>
-                <td style="font-weight: 500; color: #166534;">Admin Commission (2.5%)</td>
-                <td style="font-weight: 600; color: #166534;">
-                    +${{ number_format($order->seller_fee !== null ? (float)$order->seller_fee : round($order->subtotal * 0.025, 2), 2) }}
-                    <span class="badge" style="background: #f0fdf4; color: #166534; font-size: 0.6875rem; margin-left: 0.25rem;">2.5% Retained</span>
+                <td style="font-weight: 500; color: #be123c;">Seller Processing Fee (-2.5%)</td>
+                <td style="font-weight: 600; color: #be123c;">
+                    -${{ number_format($order->seller_fee !== null ? (float)$order->seller_fee : round($order->subtotal * 0.025, 2), 2) }}
+                    <span class="badge" style="background: #fff1f2; color: #be123c; font-size: 0.6875rem; margin-left: 0.25rem;">Deducted from Seller Payout</span>
                 </td>
             </tr>
             <tr>
-                <td style="font-weight: 500;">Seller Net Payout (97.5%)</td>
-                <td style="color: #475569;">
+                <td style="font-weight: 500; color: #0f172a;">Seller Net Payout (97.5%)</td>
+                <td style="font-weight: 600; color: #0f172a;">
                     ${{ number_format(max(0, (float)$order->subtotal - ($order->seller_fee !== null ? (float)$order->seller_fee : round($order->subtotal * 0.025, 2))), 2) }}
+                    <span class="badge" style="background: #e2e8f0; color: #334155; font-size: 0.6875rem; margin-left: 0.25rem;">Credited to Seller Wallet</span>
                 </td>
+            </tr>
+            <tr>
+                <td style="font-weight: 500; color: #166534;">Platform Commission (Admin)</td>
+                <td style="font-weight: 600; color: #166534;">
+                    ${{ number_format($order->seller_fee !== null ? (float)$order->seller_fee : round($order->subtotal * 0.025, 2), 2) }}
+                    <span class="badge" style="background: #f0fdf4; color: #166534; font-size: 0.6875rem; margin-left: 0.25rem;">Retained in Platform Wallet</span>
+                </td>
+            </tr>
+            <tr>
+                <td style="font-weight: 500;">Buyer Fee</td>
+                <td>$0.00 <span class="badge" style="background: #f1f5f9; color: #64748b; font-size: 0.6875rem; margin-left: 0.25rem;">0% (Free for Buyer)</span></td>
             </tr>
             @if((float)($order->shipping_amount ?? 0) > 0)
             <tr><td style="font-weight: 500;">Shipping Fee</td><td>${{ number_format($order->shipping_amount, 2) }}</td></tr>

@@ -148,17 +148,9 @@ class StripePaymentIntentService
                     'quantity' => 1,
                 ];
             }
-            $feeAmount = (float) $order->buyer_fee + (float) $order->platform_fee_total;
-            if ($feeAmount > 0) {
-                $lineItems[] = [
-                    'price_data' => [
-                        'currency' => 'usd',
-                        'unit_amount' => (int) round($feeAmount * 100),
-                        'product_data' => ['name' => 'Platform Fee'],
-                    ],
-                    'quantity' => 1,
-                ];
-            }
+            // Client requirement: Buyers are not charged any additional fees (No Buyer fees or platform fees).
+            // ONLY sellers are charged 2.5% processing fee, which is deducted from the seller's payout/withdrawal.
+            // Therefore, never add a platform fee line item to the buyer's checkout.
         }
 
         if (empty($lineItems)) {
@@ -215,13 +207,10 @@ class StripePaymentIntentService
      */
     public function updateIntentAmountForOrder(Order $order): array
     {
-        // Backend-computed final amount: order total + verified shipping.
-        // tax_amount and discounts are already part of the stored total when
-        // applicable (tax_amount is stored separately and currently 0).
+        // Backend-computed final amount: order subtotal + verified shipping (+ tax if any).
+        // Client requirement: Buyers are not charged any buyer fees or platform fees.
         $finalTotal = round(
             (float) $order->subtotal
-            + (float) $order->buyer_fee
-            + (float) $order->platform_fee_total
             + (float) ($order->shipping_amount ?? 0)
             + (float) ($order->tax_amount ?? 0),
             2
