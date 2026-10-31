@@ -3,6 +3,7 @@
 namespace App\Manager;
 
 use App\DTOs\ShippingOptionDTO;
+use App\Manager\ImageManager;
 use App\Models\AliExpressAccount;
 use App\Models\EtsyAccount;
 use App\Models\OrderItem;
