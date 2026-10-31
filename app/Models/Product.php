@@ -309,6 +309,11 @@ class Product extends Model
         return $this->belongsTo(EtsyAccount::class, 'etsy_account_id');
     }
 
+    public function shopifyStore(): BelongsTo
+    {
+        return $this->belongsTo(ShopifyStore::class, 'shopify_store_id');
+    }
+
     public function inventoryTransactions(): HasMany
     {
         return $this->hasMany(InventoryTransaction::class, 'product_id');

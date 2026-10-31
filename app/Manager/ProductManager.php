@@ -3,10 +3,13 @@
 namespace App\Manager;
 
 use App\DTOs\ShippingOptionDTO;
+use App\Models\AliExpressAccount;
+use App\Models\EtsyAccount;
 use App\Models\OrderItem;
 use App\Models\Product;
 use App\Models\ProductTag;
 use App\Models\Profile;
+use App\Models\ShopifyStore;
 use App\Services\AliExpressProductClient;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
@@ -127,13 +130,66 @@ class ProductManager
             throw new \Exception('Unauthenticated.', 401);
         }
 
-        $profileId = (int) $this->profileId();
         $userId = (int) $user->id;
+        $profileId = (int) $this->profileId();
 
-        // Strictly scoped to the authenticated seller (via profile_id or user_id)
-        $query = Product::where(function ($q) use ($profileId, $userId) {
-            $q->where('seller_id', $profileId)
-                ->orWhere('seller_id', $userId);
+        // Collect all profile IDs owned by this user
+        $userProfileIds = Profile::where('user_id', $userId)->pluck('id')->all();
+        if ($profileId > 0 && ! in_array($profileId, $userProfileIds, true)) {
+            $userProfileIds[] = $profileId;
+        }
+
+        $candidateIds = array_values(array_filter(array_unique(array_merge([$userId], $userProfileIds))));
+
+        // Collect connected account IDs owned by this user
+        $aliExpressAccountIds = AliExpressAccount::withTrashed()
+            ->where(function ($q) use ($userId, $userProfileIds) {
+                $q->where('user_id', $userId);
+                if (! empty($userProfileIds)) {
+                    $q->orWhereIn('profile_id', $userProfileIds);
+                }
+            })
+            ->pluck('id')
+            ->all();
+
+        $etsyAccountIds = EtsyAccount::withTrashed()
+            ->where(function ($q) use ($userId, $userProfileIds) {
+                $q->where('user_id', $userId);
+                if (! empty($userProfileIds)) {
+                    $q->orWhereIn('profile_id', $userProfileIds);
+                }
+            })
+            ->pluck('id')
+            ->all();
+
+        $shopifyStoreIds = ShopifyStore::withTrashed()
+            ->where(function ($q) use ($userId, $userProfileIds) {
+                $q->where('user_id', $userId);
+                if (! empty($userProfileIds)) {
+                    $q->orWhereIn('profile_id', $userProfileIds);
+                }
+            })
+            ->pluck('id')
+            ->all();
+
+        // Strictly scoped to the authenticated seller (local, AliExpress, CSV, Shopify, Etsy)
+        $query = Product::where(function ($q) use ($candidateIds, $userId, $aliExpressAccountIds, $etsyAccountIds, $shopifyStoreIds) {
+            $q->whereIn('seller_id', $candidateIds)
+                ->orWhereHas('seller', function ($sq) use ($userId) {
+                    $sq->where('user_id', $userId);
+                });
+
+            if (! empty($aliExpressAccountIds)) {
+                $q->orWhereIn('aliexpress_account_id', $aliExpressAccountIds);
+            }
+
+            if (! empty($etsyAccountIds)) {
+                $q->orWhereIn('etsy_account_id', $etsyAccountIds);
+            }
+
+            if (! empty($shopifyStoreIds)) {
+                $q->orWhereIn('shopify_store_id', $shopifyStoreIds);
+            }
         })
             ->latestFirst()
             ->with(['seller.user', 'category', 'tags'])
@@ -238,9 +294,9 @@ class ProductManager
             $query->orderBy($sortField, $sortDir);
         }
 
-        // Optional pagination if per_page is requested, otherwise return array
-        if (! empty($params['per_page'])) {
-            $perPage = (int) $params['per_page'];
+        // Optional pagination if per_page or page is requested, otherwise return array
+        if (! empty($params['per_page']) || ! empty($params['page'])) {
+            $perPage = ! empty($params['per_page']) ? (int) $params['per_page'] : 20;
 
             return $query->paginate($perPage);
         }
@@ -828,6 +884,11 @@ class ProductManager
             'tags' => $product->relationLoaded('tags')
                 ? $product->tags->pluck('name')
                 : [],
+            'image' => $product->main_image_url ?? ImageManager::fileUrl($product->image_url),
+            'images' => $product->all_image_urls ?? ($product->images
+                ? array_map(fn ($img) => ImageManager::fileUrl($img), $product->images)
+                : []),
+            'video' => ImageManager::fileUrl($product->video_url),
             'image_url' => ImageManager::fileUrl($product->image_url),
             'product_images' => $product->images
                 ? array_map(fn ($img) => ImageManager::fileUrl($img), $product->images)
