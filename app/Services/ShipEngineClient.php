@@ -269,19 +269,31 @@ class ShipEngineClient
                             $carrierName = (string) ($carrier['friendly_name'] ?? $carrier['carrier_code'] ?? 'Carrier');
                             foreach ($carrier['services'] ?? [] as $service) {
                                 $code = strtolower((string) ($service['service_code'] ?? ''));
+                                $name = strtolower((string) ($service['name'] ?? ''));
+
                                 $isIntl = (bool) ($service['international'] ?? false)
                                     || str_contains($code, 'international')
                                     || str_contains($code, 'worldwide')
-                                    || str_contains($code, 'global');
+                                    || str_contains($code, 'global')
+                                    || str_contains($name, 'international')
+                                    || str_contains($name, 'global');
+
                                 $isExpress = str_contains($code, 'express')
+                                    || str_contains($code, 'exp_')
                                     || str_contains($code, 'priority')
                                     || str_contains($code, '2day')
                                     || str_contains($code, 'overnight')
-                                    || str_contains($code, 'next_day');
+                                    || str_contains($code, 'next_day')
+                                    || str_contains($code, 'nextday')
+                                    || str_contains($code, '24')
+                                    || str_contains($name, 'express')
+                                    || str_contains($name, 'next day')
+                                    || str_contains($name, 'priority');
 
                                 if ($isIntl) {
                                     $intlCarriers[$carrierName] = true;
-                                } elseif ($isExpress) {
+                                }
+                                if ($isExpress) {
                                     $expressCarriers[$carrierName] = true;
                                 } else {
                                     $groundCarriers[$carrierName] = true;
