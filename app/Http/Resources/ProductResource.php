@@ -51,8 +51,8 @@ class ProductResource extends JsonResource
                 'username'    => $this->seller?->username,
                 'avatar_url'  => ImageManager::avatarUrl(
                     $this->seller?->avatar_url
-                    ?? $this->seller?->user?->avatar
-                    ?? null
+                        ?? $this->seller?->user?->avatar
+                        ?? null
                 ),
                 'is_verified' => (bool) $this->seller?->user?->is_verified,
             ],
@@ -63,15 +63,15 @@ class ProductResource extends JsonResource
             'price'            => (float) $this->price,
             'currency'         => $this->currency ?? 'USD',
             'compare_at_price' => $this->compare_at_price ? (float) $this->compare_at_price : ($src['original_price'] ?? ($src['original_price_min'] ?? null)),
-            'category'         => $this->whenLoaded('category', fn () => new ProductCategoryResource($this->category)),
+            'category'         => $this->whenLoaded('category', fn() => new ProductCategoryResource($this->category)),
             'stock_quantity'   => (int) $this->stock_quantity,
             'product_type'     => $this->product_type ?? ($this->source === 'aliexpress' ? 'physical' : null),
             'condition'        => $this->condition ?? ($this->source === 'aliexpress' ? 'new' : null),
             'product_variants' => $this->castVariants($this->product_variants ?? []),
 
             // ── 2. Details ─────────────────────────────────────────
-            'specifications'   => $this->specifications ?? (! empty($src['attributes']) && is_array($src['attributes']) ? implode("\n", array_filter(array_map(fn ($a) => isset($a['name'], $a['value']) ? "{$a['name']}: {$a['value']}" : null, $src['attributes']))) : null),
-            'features_benefits'=> $this->features_benefits,
+            'specifications'   => $this->specifications ?? (! empty($src['attributes']) && is_array($src['attributes']) ? implode("\n", array_filter(array_map(fn($a) => isset($a['name'], $a['value']) ? "{$a['name']}: {$a['value']}" : null, $src['attributes']))) : null),
+            'features_benefits' => $this->features_benefits,
             'weight'           => $this->weight ? (float) $this->weight : ($src['package']['weight'] ?? ($src['weight'] ?? null)),
             'wholesale_product' => (bool) $this->wholesale_product,
             'moq'              => $this->moq ? (int) $this->moq : null,
@@ -79,13 +79,13 @@ class ProductResource extends JsonResource
             'brand'            => $this->brand ?? ($src['brand'] ?? null),
             'sku'              => $this->sku ?? ($this->aliexpress_sku ?? ($src['skus'][0]['sku_code'] ?? null)),
             'ean_upc'          => $this->ean_upc,
-            'tags'             => $this->whenLoaded('tags', fn () => $this->tags->pluck('name')),
+            'tags'             => $this->whenLoaded('tags', fn() => $this->tags->pluck('name')),
 
             // ── 3. Shipping ────────────────────────────────────────
             'ship_from_address'  => $this->ship_from_address,
             'package_dimensions' => $this->castDimensions($this->package_dimensions ?? ($src['package'] ?? null)),
             'handling_time'      => $this->handling_time,
-            'local_location'           => $this->location,
+            'local_location'     => $this->location,
             'shipping_strategy'  => $this->shipping_strategy ?? 'manual',
 
             // AliExpress vs Local Product Shipping Distinction
@@ -94,9 +94,9 @@ class ProductResource extends JsonResource
                 'aliexpress_shipping_cost' => (float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0),
                 'estimated_delivery_time' => (string) ($this->estimated_delivery_time ?? $this->estimated_delivery ?? '10-15 business days'),
                 'shipping_fee' => ((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0) > 0)
-                    ? '$'.number_format((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0), 2)
+                    ? '$' . number_format((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0), 2)
                     : (isset($src['is_free_shipping']) && $src['is_free_shipping'] ? 'Free Shipping' : '$0.00'),
-                'shipping_display' => 'Shipping: $'.number_format((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0), 2).', ETA: '.($this->estimated_delivery_time ?? $this->estimated_delivery ?? '10-15 business days'),
+                'shipping_display' => 'Shipping: $' . number_format((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0), 2) . ', ETA: ' . ($this->estimated_delivery_time ?? $this->estimated_delivery ?? '10-15 business days'),
                 'is_free_shipping' => isset($src['is_free_shipping']) ? (bool) $src['is_free_shipping'] : ((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0) <= 0),
                 'carrier' => (! empty($src['carrier']) && ! str_contains(strtolower((string) $src['carrier']), 'aliexpress'))
                     ? (string) $src['carrier']
@@ -108,13 +108,13 @@ class ProductResource extends JsonResource
                 'is_aliexpress_product' => false,
                 'aliexpress_shipping_cost' => null,
                 'estimated_delivery_time' => null,
-                'allowed_shipping_options' => array_values(array_map(fn ($k) => $this->formatShippingOptionLabel($k), $this->getEnabledShippingOptionKeys())),
-                'shipping_display' => 'Available: '.implode(', ', array_map(fn ($k) => $this->formatShippingOptionLabel($k), $this->getEnabledShippingOptionKeys())),
-                'shipping_fee' => $this->supportsShippingOption('free_shipping') ? 'Free Shipping' : 'Calculated at checkout',
-                'is_free_shipping' => $this->supportsShippingOption('free_shipping'),
+                // 'allowed_shipping_options' => array_values(array_map(fn ($k) => $this->formatShippingOptionLabel($k), $this->getEnabledShippingOptionKeys())),
+                // 'shipping_display' => 'Available: '.implode(', ', array_map(fn ($k) => $this->formatShippingOptionLabel($k), $this->getEnabledShippingOptionKeys())),
+                // 'shipping_fee' => $this->supportsShippingOption('free_shipping') ? 'Free Shipping' : 'Calculated at checkout',
+                // 'is_free_shipping' => $this->supportsShippingOption('free_shipping'),
                 'carrier' => null,
-                'available_shipping_options' => array_values(array_map(fn ($k) => $this->formatShippingOptionLabel($k), $this->getEnabledShippingOptionKeys())),
-                'shipping_options' => array_values(array_map(fn ($dto) => [
+                // 'available_shipping_options' => array_values(array_map(fn ($k) => $this->formatShippingOptionLabel($k), $this->getEnabledShippingOptionKeys())),
+                'shipping_options' => array_values(array_map(fn($dto) => [
                     'key'                => $dto->key,
                     'name'               => $dto->name,
                     'cost'               => (float) $dto->cost,
@@ -126,7 +126,7 @@ class ProductResource extends JsonResource
 
             // ── 4. Media & Status ──────────────────────────────────
             'image_url'      => ImageManager::fileUrl($this->image_url),
-            'product_images' => $this->images ? array_map(fn ($img) => ImageManager::fileUrl($img), $this->images) : [],
+            'product_images' => $this->images ? array_map(fn($img) => ImageManager::fileUrl($img), $this->images) : [],
             'video_url'      => ImageManager::fileUrl($this->video_url),
             'is_active'      => (bool) $this->is_active,
             'status'         => $this->is_active ? 'active' : 'inactive',
@@ -144,11 +144,11 @@ class ProductResource extends JsonResource
             // ── 5. Recommendations ─────────────────────────────────
             'frequently_bought_together' => $this->when(
                 isset($this->frequently_bought_together),
-                fn () => ProductResource::collection($this->frequently_bought_together)
+                fn() => ProductResource::collection($this->frequently_bought_together)
             ),
             'customers_also_bought' => $this->when(
                 isset($this->customers_also_bought),
-                fn () => ProductResource::collection($this->customers_also_bought)
+                fn() => ProductResource::collection($this->customers_also_bought)
             ),
 
             // ── Timestamps ─────────────────────────────────────────
