@@ -83,25 +83,29 @@ class ProductController extends Controller
     protected function resolveProduct(string|int|Product $product): Product
     {
         $user = Auth::guard('jwt')->user() ?? Auth::user();
-        $candidateIds = $user ? array_filter(array_unique([
-            (int) $user->id,
-            (int) ($user->profile?->id ?? 0),
-        ])) : [];
+        $candidateProfileIds = [];
+        if ($user) {
+            $candidateProfileIds = Profile::where('user_id', $user->id)->pluck('id')->all();
+            if ($user->profile?->id && ! in_array((int) $user->profile->id, $candidateProfileIds, true)) {
+                $candidateProfileIds[] = (int) $user->profile->id;
+            }
+        }
+        $candidateProfileIds = array_values(array_filter(array_unique($candidateProfileIds)));
 
         if ($product instanceof Product) {
             // If the resolved model belongs to another seller, but this user owns a listing
             // with the same external product ID, swap to the authenticated user's product.
             if ($user && ! ($user->role === 'admin' || (method_exists($user, 'hasRole') && $user->hasRole('admin')))) {
-                $isOwner = in_array((int) $product->seller_id, $candidateIds, true)
+                $isOwner = in_array((int) $product->seller_id, $candidateProfileIds, true)
                     || ($product->seller && (int) $product->seller->user_id === (int) $user->id)
                     || ($product->aliexpressAccount && (int) $product->aliexpressAccount->user_id === (int) $user->id);
 
                 if (! $isOwner) {
                     $extId = $product->aliexpress_product_id ?: ($product->shopify_product_id ?: $product->etsy_listing_id);
                     if ($extId) {
-                        $owned = Product::where(function ($q) use ($candidateIds, $user) {
-                            if (! empty($candidateIds)) {
-                                $q->whereIn('seller_id', $candidateIds);
+                        $owned = Product::where(function ($q) use ($candidateProfileIds, $user) {
+                            if (! empty($candidateProfileIds)) {
+                                $q->whereIn('seller_id', $candidateProfileIds);
                             }
                             $q->orWhereHas('aliexpressAccount', fn ($aq) => $aq->where('user_id', $user->id))
                                 ->orWhereHas('seller', fn ($sq) => $sq->where('user_id', $user->id));
@@ -125,9 +129,9 @@ class ProductController extends Controller
 
         // 1. If user is authenticated, prioritize product owned by this seller
         if ($user) {
-            $userProduct = Product::where(function ($q) use ($candidateIds, $user) {
-                if (! empty($candidateIds)) {
-                    $q->whereIn('seller_id', $candidateIds);
+            $userProduct = Product::where(function ($q) use ($candidateProfileIds, $user) {
+                if (! empty($candidateProfileIds)) {
+                    $q->whereIn('seller_id', $candidateProfileIds);
                 }
                 $q->orWhereHas('aliexpressAccount', fn ($aq) => $aq->where('user_id', $user->id))
                     ->orWhereHas('seller', fn ($sq) => $sq->where('user_id', $user->id));

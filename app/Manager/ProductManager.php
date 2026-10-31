@@ -132,15 +132,17 @@ class ProductManager
         }
 
         $userId = (int) $user->id;
-        $profileId = (int) $this->profileId();
 
-        // Collect all profile IDs owned by this user
+        // Collect all profile IDs that actually belong to this authenticated user
         $userProfileIds = Profile::where('user_id', $userId)->pluck('id')->all();
+        $profileId = (int) ($user->profile?->id ?? 0);
+        if ($profileId === 0) {
+            $profileId = (int) $this->profileId();
+        }
         if ($profileId > 0 && ! in_array($profileId, $userProfileIds, true)) {
             $userProfileIds[] = $profileId;
         }
-
-        $candidateIds = array_values(array_filter(array_unique(array_merge([$userId], $userProfileIds))));
+        $userProfileIds = array_values(array_filter(array_unique($userProfileIds)));
 
         // Collect connected account IDs owned by this user
         $aliExpressAccountIds = AliExpressAccount::withTrashed()
@@ -174,11 +176,18 @@ class ProductManager
             ->all();
 
         // Strictly scoped to the authenticated seller (local, AliExpress, CSV, Shopify, Etsy)
-        $query = Product::where(function ($q) use ($candidateIds, $userId, $aliExpressAccountIds, $etsyAccountIds, $shopifyStoreIds) {
-            $q->whereIn('seller_id', $candidateIds)
-                ->orWhereHas('seller', function ($sq) use ($userId) {
-                    $sq->where('user_id', $userId);
+        // NOTE: seller_id is a profiles.id foreign key — never compare userId directly to seller_id.
+        $query = Product::where(function ($q) use ($userProfileIds, $userId, $aliExpressAccountIds, $etsyAccountIds, $shopifyStoreIds) {
+            $q->where(function ($sq) use ($userProfileIds, $userId) {
+                if (! empty($userProfileIds)) {
+                    $sq->whereIn('seller_id', $userProfileIds);
+                } else {
+                    $sq->whereRaw('0 = 1');
+                }
+                $sq->orWhereHas('seller', function ($sellerQ) use ($userId) {
+                    $sellerQ->where('user_id', $userId);
                 });
+            });
 
             if (! empty($aliExpressAccountIds)) {
                 $q->orWhereIn('aliexpress_account_id', $aliExpressAccountIds);
