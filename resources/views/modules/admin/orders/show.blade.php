@@ -17,12 +17,32 @@
                     <span class="badge" style="background: {{ $sc }}15; color: {{ $sc }}; text-transform: capitalize;">{{ $order->status }}</span>
                 </td>
             </tr>
-            <tr><td style="font-weight: 500;">Total Amount</td><td style="font-weight: 600; font-size: 1rem;">${{ number_format($order->total, 2) }}</td></tr>
             <tr><td style="font-weight: 500;">Subtotal</td><td>${{ number_format($order->subtotal, 2) }}</td></tr>
-            <tr><td style="font-weight: 500;">Platform Fee</td><td>${{ number_format($order->platform_fee_total, 2) }}</td></tr>
+            <tr>
+                <td style="font-weight: 500; color: #166534;">Admin Commission (2.5%)</td>
+                <td style="font-weight: 600; color: #166534;">
+                    +${{ number_format($order->seller_fee !== null ? (float)$order->seller_fee : round($order->subtotal * 0.025, 2), 2) }}
+                    <span class="badge" style="background: #f0fdf4; color: #166534; font-size: 0.6875rem; margin-left: 0.25rem;">2.5% Retained</span>
+                </td>
+            </tr>
+            <tr>
+                <td style="font-weight: 500;">Seller Net Payout (97.5%)</td>
+                <td style="color: #475569;">
+                    ${{ number_format(max(0, (float)$order->subtotal - ($order->seller_fee !== null ? (float)$order->seller_fee : round($order->subtotal * 0.025, 2))), 2) }}
+                </td>
+            </tr>
+            @if((float)($order->shipping_amount ?? 0) > 0)
+            <tr><td style="font-weight: 500;">Shipping Fee</td><td>${{ number_format($order->shipping_amount, 2) }}</td></tr>
+            @endif
+            @if((float)($order->buyer_fee ?? 0) > 0)
+            <tr><td style="font-weight: 500;">Buyer Fee</td><td>${{ number_format($order->buyer_fee, 2) }}</td></tr>
+            @endif
+            @if((float)($order->tax_amount ?? 0) > 0)
             <tr><td style="font-weight: 500;">Tax</td><td>${{ number_format($order->tax_amount, 2) }}</td></tr>
+            @endif
+            <tr><td style="font-weight: 500;">Total Amount Paid</td><td style="font-weight: 700; font-size: 1rem; color: var(--primary);">${{ number_format($order->total, 2) }}</td></tr>
             <tr><td style="font-weight: 500;">Created</td><td>{{ $order->created_at->format('M d, Y h:i A') }}</td></tr>
-            <tr><td style="font-weight: 500;">Tracking #</td><td>{{ $order->tracking_number ?? 'N/A' }}</td></tr>
+            <tr><td style="font-weight: 500;">Transaction / Tracking #</td><td><code>{{ $order->transaction_number ?? ($order->tracking_number ?? 'N/A') }}</code></td></tr>
         </table>
     </div>
 

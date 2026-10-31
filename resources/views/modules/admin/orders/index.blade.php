@@ -28,7 +28,9 @@
                 <th style="width: 60px;">ID</th>
                 <th>Buyer</th>
                 <th>Seller</th>
-                <th>Total</th>
+                <th style="text-align: right;">Subtotal</th>
+                <th style="text-align: right; color: #166534;">Admin Fee (2.5%)</th>
+                <th style="text-align: right;">Total</th>
                 <th>Status</th>
                 <th>Date</th>
                 <th style="width: 140px; text-align: right;">Actions</th>
@@ -47,7 +49,11 @@
                     </div>
                 </td>
                 <td style="font-size: 0.8125rem;">{{ $order->seller?->full_name ?? 'N/A' }}</td>
-                <td style="font-weight: 600;">${{ number_format($order->total, 2) }}</td>
+                <td style="text-align: right; font-size: 0.8125rem;">${{ number_format($order->subtotal, 2) }}</td>
+                <td style="text-align: right; font-weight: 600; color: #166534; font-size: 0.8125rem;">
+                    +${{ number_format($order->seller_fee !== null ? (float)$order->seller_fee : round($order->subtotal * 0.025, 2), 2) }}
+                </td>
+                <td style="text-align: right; font-weight: 600;">${{ number_format($order->total, 2) }}</td>
                 <td>
                     @php
                         $statusColors = [

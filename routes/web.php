@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\AdminLivestreamGiftingController;
 use App\Http\Controllers\Admin\AdminOrderController;
 use App\Http\Controllers\Admin\AdminUserController;
 use App\Http\Controllers\Admin\AdminVerificationController;
+use App\Http\Controllers\Admin\AdminWalletController;
 use App\Http\Controllers\Admin\AuditLogController;
 use App\Http\Controllers\Admin\ContentModerationController;
 use App\Http\Controllers\Admin\ProductCategoryController;
@@ -244,6 +245,11 @@ Route::middleware(['auth', 'web-admin'])->group(function () {
     Route::middleware('web-admin:orders.manage')->group(function () {
         Route::post('/admin/orders/{order}/status', [AdminOrderController::class, 'updateStatus'])->name('admin.orders.update-status');
         Route::post('/admin/orders/{order}/refund', [AdminOrderController::class, 'refund'])->name('admin.orders.refund');
+    });
+
+    // ─── Platform Wallet & Commission Management ───────────────────
+    Route::middleware('web-admin:dashboard.view')->prefix('admin/wallet')->name('admin.wallet.')->group(function () {
+        Route::get('/', [AdminWalletController::class, 'index'])->name('index');
     });
 
     // ─── Dispute Management ────────────────────────────────────────

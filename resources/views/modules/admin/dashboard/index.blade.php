@@ -37,6 +37,13 @@
             £{{ number_format($stats['revenue']['today'], 0) }} today &bull; £{{ number_format($stats['revenue']['month'], 0) }} this month
         </div>
     </div>
+    <div class="card" style="text-align: center; border-left: 4px solid #16a34a;">
+        <div style="font-size: 2rem; font-weight: 700; color: #16a34a;">${{ number_format($stats['commission']['total'], 2) }}</div>
+        <div style="font-size: 0.75rem; font-weight: 600; color: #333; margin-top: 0.25rem;">Admin Commission (2.5%)</div>
+        <div style="font-size: 0.6875rem; color: #999; margin-top: 0.5rem;">
+            ${{ number_format($stats['commission']['today'], 2) }} today &bull; ${{ number_format($stats['commission']['month'], 2) }} this month
+        </div>
+    </div>
     <div class="card" style="text-align: center;">
         <div style="font-size: 2rem; font-weight: 700; color: var(--primary);">{{ $stats['subscriptions']['active'] }}</div>
         <div style="font-size: 0.75rem; color: #888; margin-top: 0.25rem;">Active Subscriptions</div>
@@ -81,6 +88,10 @@
             Manage Users
         </a>
         @endcanPermission
+        <a href="{{ route('admin.wallet.index') }}" class="btn-primary" style="text-align: center; padding: 1rem; border-radius: 0.75rem; text-decoration: none; background: #16a34a;">
+            <i class="fa-solid fa-wallet" style="font-size: 1.25rem; display: block; margin-bottom: 0.35rem;"></i>
+            Platform Wallet (2.5%)
+        </a>
         @canPermission('posts.moderate')
         <a href="{{ route('admin.moderation.posts') }}" class="btn-primary" style="text-align: center; padding: 1rem; border-radius: 0.75rem; text-decoration: none; background: #0d9488;">
             <i class="fa-solid fa-flag" style="font-size: 1.25rem; display: block; margin-bottom: 0.35rem;"></i>

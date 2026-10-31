@@ -921,10 +921,15 @@
                     </a>
                 </li>
                 @endif
-                @if($can('orders.view') || $can('orders.manage'))
+                @if($can('orders.view') || $can('orders.manage') || $can('dashboard.view'))
                 <li>
                     <a href="{{ route('admin.orders.index') }}" class="{{ request()->routeIs('admin.orders.*') ? 'active' : '' }}">
                         <i class="fa-solid fa-receipt"></i> <span>Orders</span>
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ route('admin.wallet.index') }}" class="{{ request()->routeIs('admin.wallet.*') ? 'active' : '' }}">
+                        <i class="fa-solid fa-wallet"></i> <span>Platform Wallet (2.5%)</span>
                     </a>
                 </li>
                 @endif

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Booking;
 use App\Models\Event;
 use App\Models\JobListing;
+use App\Models\Order;
 use App\Models\Post;
 use App\Models\Product;
 use App\Models\Profile;
@@ -41,6 +42,14 @@ class AdminDashboardController extends Controller
                 'month' => (float) Transaction::where('status', 'completed')
                     ->whereMonth('created_at', now()->month)
                     ->whereYear('created_at', now()->year)->sum('amount'),
+            ],
+            'commission' => [
+                'total' => (float) Order::whereIn('status', ['processing', 'shipped', 'delivered', 'completed'])->sum('seller_fee'),
+                'today' => (float) Order::whereIn('status', ['processing', 'shipped', 'delivered', 'completed'])
+                    ->whereDate('created_at', today())->sum('seller_fee'),
+                'month' => (float) Order::whereIn('status', ['processing', 'shipped', 'delivered', 'completed'])
+                    ->whereMonth('created_at', now()->month)
+                    ->whereYear('created_at', now()->year)->sum('seller_fee'),
             ],
             'subscriptions' => [
                 'total' => UserSubscription::count(),
