@@ -73,14 +73,13 @@ class Order extends Model
     ];
 
     protected $appends = [
-        'transection_number',
         'transaction_number',
     ];
 
     /**
      * Internal order transaction identifier (e.g. #TRN-20818796).
      */
-    public function getTransectionNumberAttribute(): ?string
+    public function getTransactionNumberAttribute(): ?string
     {
         if (! empty($this->attributes['tracking_number']) && str_starts_with((string) $this->attributes['tracking_number'], '#TRN-')) {
             return (string) $this->attributes['tracking_number'];
@@ -94,11 +93,11 @@ class Order extends Model
     }
 
     /**
-     * Standard English spelling alias for transection_number.
+     * Backward-compatibility alias for legacy transection_number calls.
      */
-    public function getTransactionNumberAttribute(): ?string
+    public function getTransectionNumberAttribute(): ?string
     {
-        return $this->getTransectionNumberAttribute();
+        return $this->getTransactionNumberAttribute();
     }
 
     /**
