@@ -57,91 +57,88 @@ class ProductResource extends JsonResource
                 'is_verified' => (bool) $this->seller?->user?->is_verified,
             ],
 
-            // ── 1. Basic Information ───────────────────────────────
             'title'            => $this->title,
             'description'      => $this->clean_description,
+            'sku'              => $this->sku ?? ($this->aliexpress_sku ?? ($src['skus'][0]['sku_code'] ?? null)),
             'price'            => (float) $this->price,
-            'currency'         => $this->currency ?? 'USD',
             'compare_at_price' => $this->compare_at_price ? (float) $this->compare_at_price : ($src['original_price'] ?? ($src['original_price_min'] ?? null)),
-            'category'         => $this->whenLoaded('category', fn() => new ProductCategoryResource($this->category)),
+            'currency'         => $this->currency ?? 'USD',
             'stock_quantity'   => (int) $this->stock_quantity,
             'product_type'     => strtolower((string) ($this->product_type ?? '')) === 'digital' ? 'digital' : 'physical',
             'condition'        => in_array(strtolower((string) ($this->condition ?? '')), ['new', 'used', 'refurbished'], true) ? strtolower((string) $this->condition) : 'new',
-            'product_variants' => $this->castVariants($this->product_variants ?? []),
-
-            // ── 2. Details ─────────────────────────────────────────
+            
             'brand'            => $this->brand ?? ($src['brand'] ?? null),
-            'sku'              => $this->sku ?? ($this->aliexpress_sku ?? ($src['skus'][0]['sku_code'] ?? null)),
             'ean_upc'          => $this->ean_upc,
+            'category'         => $this->whenLoaded('category', fn() => new ProductCategoryResource($this->category)),
+            'product_variants' => $this->castVariants($this->product_variants ?? []),
             'tags'             => $this->whenLoaded('tags', fn() => $this->tags->pluck('name')),
             'specifications'   => $this->specifications ?? (! empty($src['attributes']) && is_array($src['attributes']) ? implode("\n", array_filter(array_map(fn($a) => isset($a['name'], $a['value']) ? "{$a['name']}: {$a['value']}" : null, $src['attributes']))) : null),
-            'features_benefits' => $this->features_benefits,
-            'weight'           => $this->weight ? (float) $this->weight : ($src['package']['weight'] ?? ($src['weight'] ?? null)),
-            'wholesale_product' => (bool) $this->wholesale_product,
+            'features_benefits'=> $this->features_benefits,
+            'wholesale_product'=> (bool) $this->wholesale_product,
             'moq'              => $this->moq ? (int) $this->moq : null,
             'bulk_pricing'     => $this->castBulkPricing($this->bulk_pricing ?? []),
 
-            // ── 3. Shipping ────────────────────────────────────────
             'ship_from_address'  => $this->ship_from_address,
+            'weight'             => $this->weight ? (float) $this->weight : ($src['package']['weight'] ?? ($src['weight'] ?? null)),
             'package_dimensions' => $this->castDimensions($this->package_dimensions ?? ($src['package'] ?? null)),
-            'handling_time'      => $this->handling_time,
+            // 'handling_time'      => $this->handling_time,
             'local_location'     => $this->location,
             'shipping_strategy'  => $this->shipping_strategy ?? 'manual',
 
-            // AliExpress vs Local Product Shipping Distinction
-            ...($this->source === 'aliexpress' || ! empty($this->aliexpress_product_id) ? [
-                'is_aliexpress_product' => true,
-                'aliexpress_shipping_cost' => (float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0),
-                'estimated_delivery_time' => (string) ($this->estimated_delivery_time ?? $this->estimated_delivery ?? '10-15 business days'),
-                'shipping_fee' => ((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0) > 0)
-                    ? '$' . number_format((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0), 2)
-                    : (isset($src['is_free_shipping']) && $src['is_free_shipping'] ? 'Free Shipping' : '$0.00'),
-                'shipping_display' => 'Shipping: $' . number_format((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0), 2) . ', ETA: ' . ($this->estimated_delivery_time ?? $this->estimated_delivery ?? '10-15 business days'),
-                'is_free_shipping' => isset($src['is_free_shipping']) ? (bool) $src['is_free_shipping'] : ((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0) <= 0),
-                'carrier' => (! empty($src['carrier']) && ! str_contains(strtolower((string) $src['carrier']), 'aliexpress'))
-                    ? (string) $src['carrier']
-                    : 'Standard Tracked Shipping',
-                'allowed_shipping_options' => [],
-                'available_shipping_options' => [],
-                'rate_selection_required' => false,
-            ] : [
-                'is_aliexpress_product' => false,
-                'aliexpress_shipping_cost' => null,
-                'estimated_delivery_time' => null,
-                // 'allowed_shipping_options' => array_values(array_map(fn ($k) => $this->formatShippingOptionLabel($k), $this->getEnabledShippingOptionKeys())),
-                // 'shipping_display' => 'Available: '.implode(', ', array_map(fn ($k) => $this->formatShippingOptionLabel($k), $this->getEnabledShippingOptionKeys())),
-                // 'shipping_fee' => $this->supportsShippingOption('free_shipping') ? 'Free Shipping' : 'Calculated at checkout',
-                // 'is_free_shipping' => $this->supportsShippingOption('free_shipping'),
-                'carrier' => null,
-                // 'available_shipping_options' => array_values(array_map(fn ($k) => $this->formatShippingOptionLabel($k), $this->getEnabledShippingOptionKeys())),
-                'shipping_options' => array_values(array_map(fn($dto) => [
-                    'key'                => $dto->key,
-                    'name'               => $dto->name,
-                    'cost'               => (float) $dto->cost,
-                    'estimated_delivery' => $dto->estimatedDelivery,
-                    'description'        => $dto->description,
-                ], $this->getEnabledShippingOptions())),
-                'rate_selection_required' => true,
-            ]),
+            'shipping_options' => array_values(array_map(fn($dto) => [
+                'key'                => $dto->key,
+                'name'               => $dto->name,
+                'cost'               => (float) $dto->cost,
+                'estimated_delivery' => $dto->estimatedDelivery,
+                'description'        => $dto->description,
+            ], $this->getEnabledShippingOptions())),
 
-            // ── 4. Media & Status ──────────────────────────────────
+            // ...($this->source === 'aliexpress' || ! empty($this->aliexpress_product_id) ? [
+            //     'is_aliexpress_product' => true,
+            //     'aliexpress_shipping_cost' => (float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0),
+            //     'estimated_delivery_time' => (string) ($this->estimated_delivery_time ?? $this->estimated_delivery ?? '10-15 business days'),
+            //     'shipping_fee' => ((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0) > 0)
+            //         ? '$' . number_format((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0), 2)
+            //         : (isset($src['is_free_shipping']) && $src['is_free_shipping'] ? 'Free Shipping' : '$0.00'),
+            //     'shipping_display' => 'Shipping: $' . number_format((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0), 2) . ', ETA: ' . ($this->estimated_delivery_time ?? $this->estimated_delivery ?? '10-15 business days'),
+            //     'is_free_shipping' => isset($src['is_free_shipping']) ? (bool) $src['is_free_shipping'] : ((float) ($this->aliexpress_shipping_cost ?? $this->shipping_cost ?? 0.0) <= 0),
+            //     'carrier' => (! empty($src['carrier']) && ! str_contains(strtolower((string) $src['carrier']), 'aliexpress'))
+            //         ? (string) $src['carrier']
+            //         : 'Standard Tracked Shipping',
+            //     'allowed_shipping_options' => [],
+            //     'available_shipping_options' => [],
+            //     'rate_selection_required' => false,
+            // ] : [
+            //     'is_aliexpress_product' => false,
+            //     'aliexpress_shipping_cost' => null,
+            //     'estimated_delivery_time' => null,
+            //     // 'allowed_shipping_options' => array_values(array_map(fn ($k) => $this->formatShippingOptionLabel($k), $this->getEnabledShippingOptionKeys())),
+            //     // 'shipping_display' => 'Available: '.implode(', ', array_map(fn ($k) => $this->formatShippingOptionLabel($k), $this->getEnabledShippingOptionKeys())),
+            //     // 'shipping_fee' => $this->supportsShippingOption('free_shipping') ? 'Free Shipping' : 'Calculated at checkout',
+            //     // 'is_free_shipping' => $this->supportsShippingOption('free_shipping'),
+            //     'carrier' => null,
+            //     // 'available_shipping_options' => array_values(array_map(fn ($k) => $this->formatShippingOptionLabel($k), $this->getEnabledShippingOptionKeys())),
+            //     'shipping_options' => array_values(array_map(fn($dto) => [
+            //         'key'                => $dto->key,
+            //         'name'               => $dto->name,
+            //         'cost'               => (float) $dto->cost,
+            //         'estimated_delivery' => $dto->estimatedDelivery,
+            //         'description'        => $dto->description,
+            //     ], $this->getEnabledShippingOptions())),
+            //     'rate_selection_required' => true,
+            // ]),
+
             'image_url'      => ImageManager::fileUrl($this->image_url),
             'product_images' => $this->images ? array_map(fn($img) => ImageManager::fileUrl($img), $this->images) : [],
             'video_url'      => ImageManager::fileUrl($this->video_url),
             'is_active'      => (bool) $this->is_active,
             'status'         => $this->is_active ? 'active' : 'inactive',
-            'source'         => $this->source ?? 'local',
-            'aliexpress_product_id' => $this->aliexpress_product_id,
-            'shopify_product_id'    => $this->shopify_product_id,
-            'etsy_listing_id'       => $this->etsy_listing_id,
-            'rating'         => $rating,
-            'rating_count'   => $ratingCount,
             'is_saved'       => (bool) (auth('jwt')->user()?->profile?->id
                 ? $this->saves()->where('user_id', auth('jwt')->user()->profile->id)->exists()
                 : false),
+            'source'         => $this->source ?? 'local',
             'digital_download_url' => $this->digital_download_url,
 
-            // ── 5. Recommendations ─────────────────────────────────
             'frequently_bought_together' => $this->when(
                 isset($this->frequently_bought_together),
                 fn() => ProductResource::collection($this->frequently_bought_together)
@@ -151,7 +148,13 @@ class ProductResource extends JsonResource
                 fn() => ProductResource::collection($this->customers_also_bought)
             ),
 
-            // ── Timestamps ─────────────────────────────────────────
+            'aliexpress_product_id' => $this->aliexpress_product_id,
+            'shopify_product_id'    => $this->shopify_product_id,
+            'etsy_listing_id'       => $this->etsy_listing_id,
+
+            'rating'         => $rating,
+            'rating_count'   => $ratingCount,
+
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
