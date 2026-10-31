@@ -261,23 +261,38 @@ class CheckoutController extends Controller
                     continue;
                 }
 
-                $isExpress = str_contains($serviceText, 'express')
+                $deliveryDays = (int) ($r['delivery_days'] ?? 0);
+                $isSlowOrPostal = str_contains($serviceText, 'airmail')
+                    || str_contains($serviceText, 'economy')
+                    || str_contains($serviceText, 'postal')
+                    || str_contains($serviceText, 'standard')
+                    || ($r['service_code'] ?? '') === 'international_shipping'
+                    || ($r['service_type'] ?? '') === 'International Shipping'
+                    || ($deliveryDays > 5);
+
+                $isExpress = ! $isSlowOrPostal && (
+                    str_contains($serviceText, 'express')
                     || str_contains($serviceText, '2day')
-                    || str_contains($serviceText, 'priority')
+                    || str_contains($serviceText, '1day')
                     || str_contains($serviceText, 'overnight')
                     || str_contains($serviceText, 'next_day')
                     || str_contains($serviceText, 'next day')
-                    || str_contains($serviceText, '1day')
+                    || str_contains($serviceText, 'same_day')
                     || str_contains($serviceText, 'track_24')
                     || str_contains($serviceText, 'track 24')
                     || str_contains($serviceText, 'special_delivery')
-                    || str_contains($serviceText, 'expedited');
+                    || str_contains($serviceText, 'priority_mail_express')
+                    || str_contains($serviceText, 'expedited')
+                );
 
-                if ($isCrossBorder) {
-                    // For international shipments, map international rates to standard or express
-                    $optKey = $isExpress ? 'express_shipping' : ($canonical === 'international_shipping' ? 'international_shipping' : 'standard_shipping');
+                if ($isExpress) {
+                    $optKey = 'express_shipping';
+                } elseif ($isIntl || $isCrossBorder) {
+                    $optKey = ($canonical === 'standard_shipping' && ! $product->supportsShippingOption('international_shipping'))
+                        ? 'standard_shipping'
+                        : 'international_shipping';
                 } else {
-                    $optKey = $isIntl ? 'international_shipping' : ($isExpress ? 'express_shipping' : 'standard_shipping');
+                    $optKey = 'standard_shipping';
                 }
 
                 $r['service_name']        = $r['service_name'] ?? ($r['service_type'] ?? ($r['carrier_friendly_name'] ?? 'Standard Delivery'));

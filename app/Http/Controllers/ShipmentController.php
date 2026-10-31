@@ -342,15 +342,42 @@ class ShipmentController extends Controller
 
             // Enrich each rate with shipping_option_key and service_name for UI grouping
             $rates = array_map(function (array $r) {
-                $service = strtolower((string) ($r['service_code'] ?? $r['service_type'] ?? ''));
-                $isExpress = str_contains($service, 'express')
-                    || str_contains($service, '2day')
-                    || str_contains($service, 'overnight')
-                    || str_contains($service, 'next_day')
-                    || str_contains($service, 'priority_mail_express');
-                $isInternational = str_contains($service, 'international') || str_contains($service, 'intl');
+                $serviceText = strtolower(implode(' ', array_filter([
+                    (string) ($r['service_code'] ?? ''),
+                    (string) ($r['service_type'] ?? ''),
+                    (string) ($r['service_name'] ?? ''),
+                    (string) ($r['carrier_friendly_name'] ?? ''),
+                ])));
 
-                $r['shipping_option_key'] = $isInternational ? 'international_shipping' : ($isExpress ? 'express_shipping' : 'standard_shipping');
+                $deliveryDays = (int) ($r['delivery_days'] ?? 0);
+                $isSlowOrPostal = str_contains($serviceText, 'airmail')
+                    || str_contains($serviceText, 'economy')
+                    || str_contains($serviceText, 'postal')
+                    || str_contains($serviceText, 'standard')
+                    || ($r['service_code'] ?? '') === 'international_shipping'
+                    || ($r['service_type'] ?? '') === 'International Shipping'
+                    || ($deliveryDays > 5);
+
+                $isExpress = ! $isSlowOrPostal && (
+                    str_contains($serviceText, 'express')
+                    || str_contains($serviceText, '2day')
+                    || str_contains($serviceText, '1day')
+                    || str_contains($serviceText, 'overnight')
+                    || str_contains($serviceText, 'next_day')
+                    || str_contains($serviceText, 'next day')
+                    || str_contains($serviceText, 'same_day')
+                    || str_contains($serviceText, 'track_24')
+                    || str_contains($serviceText, 'track 24')
+                    || str_contains($serviceText, 'special_delivery')
+                    || str_contains($serviceText, 'priority_mail_express')
+                );
+
+                $isIntl = str_contains($serviceText, 'international')
+                    || str_contains($serviceText, 'intl')
+                    || str_contains($serviceText, 'worldwide')
+                    || str_contains($serviceText, 'global');
+
+                $r['shipping_option_key'] = $isExpress ? 'express_shipping' : ($isIntl ? 'international_shipping' : 'standard_shipping');
                 $r['service_name'] = $r['service_name'] ?? ($r['service_type'] ?? ($r['carrier_friendly_name'] ?? 'Standard Delivery'));
 
                 return $r;
@@ -562,15 +589,42 @@ class ShipmentController extends Controller
                     );
 
                     foreach ($calculatedRates as $r) {
-                        $service = strtolower((string) ($r['service_code'] ?? $r['service_type'] ?? ''));
-                        $isExpress = str_contains($service, 'express')
-                            || str_contains($service, '2day')
-                            || str_contains($service, 'overnight')
-                            || str_contains($service, 'next_day')
-                            || str_contains($service, 'priority_mail_express');
-                        $isInternational = str_contains($service, 'international') || str_contains($service, 'intl');
+                        $serviceText = strtolower(implode(' ', array_filter([
+                            (string) ($r['service_code'] ?? ''),
+                            (string) ($r['service_type'] ?? ''),
+                            (string) ($r['service_name'] ?? ''),
+                            (string) ($r['carrier_friendly_name'] ?? ''),
+                        ])));
 
-                        $optKey = $isInternational ? 'international_shipping' : ($isExpress ? 'express_shipping' : 'standard_shipping');
+                        $deliveryDays = (int) ($r['delivery_days'] ?? 0);
+                        $isSlowOrPostal = str_contains($serviceText, 'airmail')
+                            || str_contains($serviceText, 'economy')
+                            || str_contains($serviceText, 'postal')
+                            || str_contains($serviceText, 'standard')
+                            || ($r['service_code'] ?? '') === 'international_shipping'
+                            || ($r['service_type'] ?? '') === 'International Shipping'
+                            || ($deliveryDays > 5);
+
+                        $isExpress = ! $isSlowOrPostal && (
+                            str_contains($serviceText, 'express')
+                            || str_contains($serviceText, '2day')
+                            || str_contains($serviceText, '1day')
+                            || str_contains($serviceText, 'overnight')
+                            || str_contains($serviceText, 'next_day')
+                            || str_contains($serviceText, 'next day')
+                            || str_contains($serviceText, 'same_day')
+                            || str_contains($serviceText, 'track_24')
+                            || str_contains($serviceText, 'track 24')
+                            || str_contains($serviceText, 'special_delivery')
+                            || str_contains($serviceText, 'priority_mail_express')
+                        );
+
+                        $isIntl = str_contains($serviceText, 'international')
+                            || str_contains($serviceText, 'intl')
+                            || str_contains($serviceText, 'worldwide')
+                            || str_contains($serviceText, 'global');
+
+                        $optKey = $isExpress ? 'express_shipping' : ($isIntl ? 'international_shipping' : 'standard_shipping');
                         $r['shipping_option_key'] = $optKey;
                         $r['service_name'] = $r['service_name'] ?? ($r['service_type'] ?? ($r['carrier_friendly_name'] ?? 'Standard Delivery'));
 
