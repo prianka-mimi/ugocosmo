@@ -377,8 +377,15 @@ class ShipmentController extends Controller
                     || str_contains($serviceText, 'worldwide')
                     || str_contains($serviceText, 'global');
 
-                $r['shipping_option_key'] = $isExpress ? 'express_shipping' : ($isIntl ? 'international_shipping' : 'standard_shipping');
-                $r['service_name'] = $r['service_name'] ?? ($r['service_type'] ?? ($r['carrier_friendly_name'] ?? 'Standard Delivery'));
+                $optKey = $isExpress ? 'express_shipping' : ($isIntl ? 'international_shipping' : 'standard_shipping');
+                if ($optKey === 'international_shipping' && in_array($r['service_type'] ?? '', ['Standard Shipping', 'Standard Delivery'], true)) {
+                    $r['service_type'] = 'International Delivery';
+                }
+                $r['shipping_option_key'] = $optKey;
+                $r['service_name'] = $r['service_name'] ?? ($r['service_type'] ?? ($r['carrier_friendly_name'] ?? ($optKey === 'international_shipping' ? 'International Delivery' : 'Standard Delivery')));
+                if ($optKey === 'international_shipping' && in_array($r['service_name'], ['Standard Shipping', 'Standard Delivery'], true)) {
+                    $r['service_name'] = 'International Delivery';
+                }
 
                 return $r;
             }, $rates);
@@ -625,8 +632,14 @@ class ShipmentController extends Controller
                             || str_contains($serviceText, 'global');
 
                         $optKey = $isExpress ? 'express_shipping' : ($isIntl ? 'international_shipping' : 'standard_shipping');
+                        if ($optKey === 'international_shipping' && in_array($r['service_type'] ?? '', ['Standard Shipping', 'Standard Delivery'], true)) {
+                            $r['service_type'] = 'International Delivery';
+                        }
                         $r['shipping_option_key'] = $optKey;
-                        $r['service_name'] = $r['service_name'] ?? ($r['service_type'] ?? ($r['carrier_friendly_name'] ?? 'Standard Delivery'));
+                        $r['service_name'] = $r['service_name'] ?? ($r['service_type'] ?? ($r['carrier_friendly_name'] ?? ($optKey === 'international_shipping' ? 'International Delivery' : 'Standard Delivery')));
+                        if ($optKey === 'international_shipping' && in_array($r['service_name'], ['Standard Shipping', 'Standard Delivery'], true)) {
+                            $r['service_name'] = 'International Delivery';
+                        }
 
                         $allRates[] = $r;
                     }

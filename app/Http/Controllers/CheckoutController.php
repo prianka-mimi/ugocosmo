@@ -295,7 +295,13 @@ class CheckoutController extends Controller
                     $optKey = 'standard_shipping';
                 }
 
-                $r['service_name']        = $r['service_name'] ?? ($r['service_type'] ?? ($r['carrier_friendly_name'] ?? 'Standard Delivery'));
+                if ($optKey === 'international_shipping' && in_array($r['service_type'] ?? '', ['Standard Shipping', 'Standard Delivery'], true)) {
+                    $r['service_type'] = 'International Delivery';
+                }
+                $r['service_name']        = $r['service_name'] ?? ($r['service_type'] ?? ($r['carrier_friendly_name'] ?? ($optKey === 'international_shipping' ? 'International Delivery' : 'Standard Delivery')));
+                if ($optKey === 'international_shipping' && in_array($r['service_name'], ['Standard Shipping', 'Standard Delivery'], true)) {
+                    $r['service_name'] = 'International Delivery';
+                }
                 $r['shipping_option_key'] = $optKey;
 
                 // Strict filter: only include rates that match the requested canonical method

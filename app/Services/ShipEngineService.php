@@ -421,7 +421,7 @@ class ShipEngineService
                             'carrier_code' => 'fedex',
                             'carrier_friendly_name' => 'FedEx International Economy',
                             'service_code' => 'fedex_international_economy',
-                            'service_type' => 'Standard Shipping',
+                            'service_type' => 'International Economy',
                             'shipping_amount' => 24.99,
                             'currency' => $currency,
                             'delivery_days' => 10,
