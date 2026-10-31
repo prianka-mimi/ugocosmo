@@ -25,6 +25,123 @@ class ProductUpdateRequest extends FormRequest
                 'condition' => strtolower(trim((string) $this->input('condition'))),
             ]);
         }
+
+        if ($this->has('bulk_pricing')) {
+            $this->merge([
+                'bulk_pricing' => $this->normalizeBulkPricing($this->input('bulk_pricing')),
+            ]);
+        }
+
+        if ($this->has('product_variants') && is_string($this->input('product_variants'))) {
+            $decoded = json_decode($this->input('product_variants'), true);
+            if (is_array($decoded)) {
+                $this->merge(['product_variants' => $decoded]);
+            }
+        }
+
+        if ($this->has('tags') && is_string($this->input('tags'))) {
+            $decoded = json_decode($this->input('tags'), true);
+            if (is_array($decoded)) {
+                $this->merge(['tags' => $decoded]);
+            }
+        }
+
+        if ($this->has('shipping_options') && is_string($this->input('shipping_options'))) {
+            $decoded = json_decode($this->input('shipping_options'), true);
+            if (is_array($decoded)) {
+                $this->merge(['shipping_options' => $decoded]);
+            }
+        }
+
+        if ($this->has('package_dimensions') && is_string($this->input('package_dimensions'))) {
+            $decoded = json_decode($this->input('package_dimensions'), true);
+            if (is_array($decoded)) {
+                $this->merge(['package_dimensions' => $decoded]);
+            }
+        }
+
+        if ($this->has('digital_download_url') && $this->input('digital_download_url') === '') {
+            $this->merge(['digital_download_url' => null]);
+        }
+
+        if ($this->has('image') && ! $this->hasFile('image') && ($this->input('image') === '' || is_string($this->input('image')))) {
+            $this->request->remove('image');
+        }
+
+        if ($this->has('video') && ! $this->hasFile('video') && ($this->input('video') === '' || is_string($this->input('video')))) {
+            $this->request->remove('video');
+        }
+    }
+
+    protected function normalizeBulkPricing(mixed $raw): ?array
+    {
+        if (empty($raw)) {
+            return null;
+        }
+
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $raw = $decoded;
+            }
+        }
+
+        if (! is_array($raw)) {
+            return null;
+        }
+
+        // Check if items are already well-formed pairs
+        $allPaired = true;
+        foreach ($raw as $item) {
+            if (! is_array($item) || ! isset($item['min_quantity']) || ! isset($item['price_per_unit'])) {
+                $allPaired = false;
+                break;
+            }
+        }
+
+        if ($allPaired && ! empty($raw)) {
+            return array_values($raw);
+        }
+
+        // Handle split arrays caused by multipart/form-data empty brackets (e.g. bulk_pricing[][min_quantity])
+        $minQuantities = [];
+        $prices = [];
+        $otherPairs = [];
+
+        foreach ($raw as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            if (isset($item['min_quantity']) && isset($item['price_per_unit'])) {
+                $otherPairs[] = [
+                    'min_quantity' => is_numeric($item['min_quantity']) ? (int) $item['min_quantity'] : $item['min_quantity'],
+                    'price_per_unit' => is_numeric($item['price_per_unit']) ? (float) $item['price_per_unit'] : $item['price_per_unit'],
+                ];
+            } elseif (isset($item['min_quantity'])) {
+                $minQuantities[] = is_numeric($item['min_quantity']) ? (int) $item['min_quantity'] : $item['min_quantity'];
+            } elseif (isset($item['price_per_unit'])) {
+                $prices[] = is_numeric($item['price_per_unit']) ? (float) $item['price_per_unit'] : $item['price_per_unit'];
+            }
+        }
+
+        $paired = [];
+        $count = max(count($minQuantities), count($prices));
+        for ($i = 0; $i < $count; $i++) {
+            $entry = [];
+            if (isset($minQuantities[$i])) {
+                $entry['min_quantity'] = $minQuantities[$i];
+            }
+            if (isset($prices[$i])) {
+                $entry['price_per_unit'] = $prices[$i];
+            }
+            if (! empty($entry)) {
+                $paired[] = $entry;
+            }
+        }
+
+        $result = array_merge($otherPairs, $paired);
+
+        return ! empty($result) ? $result : null;
     }
 
     public function rules(): array
