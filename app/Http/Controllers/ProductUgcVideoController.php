@@ -18,7 +18,7 @@ class ProductUgcVideoController extends Controller
     /**
      * Generate or improve an e-commerce UGC video using Gemini Omni Video Interactions API,
      * with automatic video upload handling, smart length trimming, prompt sanitization,
-     * and multi-stage safe fallback retry.
+     * and context-aware multimodal product conditioning.
      */
     public function generateUgcVideo(Request $request): JsonResponse
     {
@@ -33,34 +33,41 @@ class ProductUgcVideoController extends Controller
                 'prompt_override' => ['nullable', 'string', 'max:2000'],
                 'duration' => ['nullable', 'integer', 'min:3', 'max:60'],
                 'aspect_ratio' => ['nullable', 'string', 'in:9:16,16:9,1:1'],
-                'video' => ['nullable'],
-                'videos' => ['nullable'],
                 'video_url' => ['nullable'],
                 'video_urls' => ['nullable'],
-                'image' => ['nullable'],
-                'images' => ['nullable'],
                 'image_url' => ['nullable'],
                 'image_urls' => ['nullable'],
             ];
 
-            // Dynamic validation for uploaded video file(s) (up to 100MB)
-            if ($request->hasFile('video')) {
-                if (is_array($request->file('video'))) {
-                    $rules['video.*'] = ['file', 'mimetypes:video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/3gpp', 'max:102400'];
-                } else {
-                    $rules['video'] = ['file', 'mimetypes:video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/3gpp', 'max:102400'];
+            // Flexible validation for video file keys (single or bracketed array: video, videos, video[], videos[])
+            $videoKeys = ['video', 'videos', 'video[]', 'videos[]'];
+            foreach ($videoKeys as $vKey) {
+                $rules[$vKey] = ['nullable'];
+                if ($request->hasFile($vKey)) {
+                    $vFiles = $request->file($vKey);
+                    if (is_array($vFiles)) {
+                        $rules["{$vKey}.*"] = ['file', 'mimetypes:video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/3gpp', 'max:102400'];
+                    } else {
+                        $rules[$vKey] = ['file', 'mimetypes:video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/3gpp', 'max:102400'];
+                    }
                 }
             }
 
-            if ($request->hasFile('videos')) {
-                if (is_array($request->file('videos'))) {
-                    $rules['videos.*'] = ['file', 'mimetypes:video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/3gpp', 'max:102400'];
-                } else {
-                    $rules['videos'] = ['file', 'mimetypes:video/mp4,video/quicktime,video/webm,video/x-msvideo,video/x-matroska,video/3gpp', 'max:102400'];
+            // Flexible validation for image file keys (single or bracketed array: image, images, image[], images[])
+            $imageKeys = ['image', 'images', 'image[]', 'images[]'];
+            foreach ($imageKeys as $imgKey) {
+                $rules[$imgKey] = ['nullable'];
+                if ($request->hasFile($imgKey)) {
+                    $imgFiles = $request->file($imgKey);
+                    if (is_array($imgFiles)) {
+                        $rules["{$imgKey}.*"] = ['file', 'image', 'max:10240'];
+                    } else {
+                        $rules[$imgKey] = ['file', 'image', 'max:10240'];
+                    }
                 }
             }
 
-            // Dynamic validation for video URL(s)
+            // Validation for video URLs
             if ($request->has('video_url')) {
                 if (is_array($request->input('video_url'))) {
                     $rules['video_url.*'] = ['nullable', 'url'];
@@ -68,12 +75,11 @@ class ProductUgcVideoController extends Controller
                     $rules['video_url'] = ['nullable', 'url'];
                 }
             }
-
             if ($request->has('video_urls') && is_array($request->input('video_urls'))) {
                 $rules['video_urls.*'] = ['nullable', 'url'];
             }
 
-            // Dynamic validation for reference image URL(s)
+            // Validation for reference image URLs
             if ($request->has('image_url')) {
                 if (is_array($request->input('image_url'))) {
                     $rules['image_url.*'] = ['nullable', 'url'];
@@ -81,26 +87,8 @@ class ProductUgcVideoController extends Controller
                     $rules['image_url'] = ['nullable', 'url'];
                 }
             }
-
             if ($request->has('image_urls') && is_array($request->input('image_urls'))) {
                 $rules['image_urls.*'] = ['nullable', 'url'];
-            }
-
-            // Dynamic validation for reference image file(s)
-            if ($request->hasFile('image')) {
-                if (is_array($request->file('image'))) {
-                    $rules['image.*'] = ['file', 'image', 'max:10240'];
-                } else {
-                    $rules['image'] = ['file', 'image', 'max:10240'];
-                }
-            }
-
-            if ($request->hasFile('images')) {
-                if (is_array($request->file('images'))) {
-                    $rules['images.*'] = ['file', 'image', 'max:10240'];
-                } else {
-                    $rules['images'] = ['file', 'image', 'max:10240'];
-                }
             }
 
             $validated = $request->validate($rules);
@@ -113,9 +101,9 @@ class ProductUgcVideoController extends Controller
             $title = $validated['title'] ?? ($validated['name'] ?? null);
             $description = $validated['description'] ?? null;
             $promptOverride = $validated['prompt_override'] ?? null;
-            
-            // Note: Gemini Omni 1.1 Flash generates clips between 3 and 10 seconds.
-            // Any user-requested duration is gracefully clamped to this range.
+
+            // Gemini Omni 1.1 Flash generates clips between 3 and 10 seconds.
+            // Any user-requested duration is smoothly mapped into this range.
             $requestedDuration = isset($validated['duration']) ? (int) $validated['duration'] : null;
             $duration = $requestedDuration ? min(max($requestedDuration, 3), 10) : 5;
             $aspectRatio = $validated['aspect_ratio'] ?? '9:16';
@@ -127,14 +115,97 @@ class ProductUgcVideoController extends Controller
             $originalVideoUrl = null;
             $tempFilesToCleanup = [];
 
-            // 1. Process uploaded video file(s)
+            // ── 1. Process Reference Images First (So Product Photo is Preferred as Thumbnail) ──
+            $uploadedImageFiles = [];
+            foreach (['images', 'images[]', 'image', 'image[]'] as $key) {
+                if ($request->hasFile($key)) {
+                    $files = $request->file($key);
+                    if (is_array($files)) {
+                        $uploadedImageFiles = array_merge($uploadedImageFiles, $files);
+                    } elseif ($files) {
+                        $uploadedImageFiles[] = $files;
+                    }
+                }
+            }
+
+            foreach ($uploadedImageFiles as $file) {
+                if ($file && $file->isValid()) {
+                    $mime = $file->getMimeType() ?: 'image/jpeg';
+                    $content = file_get_contents($file->getRealPath());
+                    if ($content !== false && ! empty($content)) {
+                        $imageParts[] = [
+                            'type' => 'image',
+                            'mime_type' => $mime,
+                            'data' => base64_encode($content),
+                        ];
+
+                        if ($thumbnailFileName === null) {
+                            $ext = $file->getClientOriginalExtension() ?: 'jpg';
+                            $thumbnailFileName = "{$uuid}_thumb.{$ext}";
+                            Storage::disk('public')->put("ugc-videos/{$thumbnailFileName}", $content);
+                        }
+                    }
+                }
+            }
+
+            // Process reference image URLs
+            $rawImageUrls = [];
+            foreach (['image_urls', 'image_url', 'image_urls[]', 'image_url[]'] as $key) {
+                if ($request->filled($key)) {
+                    $val = $request->input($key);
+                    if (is_array($val)) {
+                        $rawImageUrls = array_merge($rawImageUrls, $val);
+                    } elseif (is_string($val)) {
+                        $decoded = json_decode($val, true);
+                        if (is_array($decoded)) {
+                            $rawImageUrls = array_merge($rawImageUrls, $decoded);
+                        } else {
+                            $rawImageUrls = array_merge($rawImageUrls, array_map('trim', explode(',', $val)));
+                        }
+                    }
+                }
+            }
+
+            foreach (array_unique(array_filter($rawImageUrls)) as $url) {
+                if (is_string($url) && filter_var($url, FILTER_VALIDATE_URL)) {
+                    try {
+                        $res = Http::withHeaders([
+                            'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                            'Accept' => 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                        ])->timeout(15)->get($url);
+
+                        if ($res->successful() && ! empty($res->body())) {
+                            $mime = explode(';', $res->header('Content-Type') ?: 'image/jpeg')[0];
+                            $body = $res->body();
+
+                            $imageParts[] = [
+                                'type' => 'image',
+                                'mime_type' => $mime,
+                                'data' => base64_encode($body),
+                            ];
+
+                            if ($thumbnailFileName === null) {
+                                $thumbnailFileName = "{$uuid}_thumb.jpg";
+                                Storage::disk('public')->put("ugc-videos/{$thumbnailFileName}", $body);
+                            }
+                        }
+                    } catch (Throwable $e) {
+                        Log::warning("Failed to fetch reference image from URL {$url}: ".$e->getMessage());
+                    }
+                }
+            }
+
+            // ── 2. Process Uploaded Video File(s) ──
             $uploadedVideoFiles = [];
-            if ($request->hasFile('videos')) {
-                $vFiles = $request->file('videos');
-                $uploadedVideoFiles = is_array($vFiles) ? $vFiles : [$vFiles];
-            } elseif ($request->hasFile('video')) {
-                $vFiles = $request->file('video');
-                $uploadedVideoFiles = is_array($vFiles) ? $vFiles : [$vFiles];
+            foreach (['videos', 'videos[]', 'video', 'video[]'] as $key) {
+                if ($request->hasFile($key)) {
+                    $vFiles = $request->file($key);
+                    if (is_array($vFiles)) {
+                        $uploadedVideoFiles = array_merge($uploadedVideoFiles, $vFiles);
+                    } elseif ($vFiles) {
+                        $uploadedVideoFiles[] = $vFiles;
+                    }
+                }
             }
 
             foreach ($uploadedVideoFiles as $vFile) {
@@ -149,7 +220,7 @@ class ProductUgcVideoController extends Controller
                         $originalVideoUrl = asset("storage/ugc-videos/{$inputVideoFileName}");
                     }
 
-                    // Auto-extract a high quality thumbnail from the video if none exists
+                    // If no product image was uploaded, extract video frame as fallback thumbnail
                     if ($thumbnailFileName === null) {
                         $thumbnailFileName = "{$uuid}_thumb.jpg";
                         $thumbFullPath = Storage::disk('public')->path("ugc-videos/{$thumbnailFileName}");
@@ -174,9 +245,9 @@ class ProductUgcVideoController extends Controller
                 }
             }
 
-            // 2. Process video URL(s)
+            // Process video URL(s)
             $rawVideoUrls = [];
-            foreach (['video_urls', 'video_url'] as $key) {
+            foreach (['video_urls', 'video_url', 'video_urls[]', 'video_url[]'] as $key) {
                 if ($request->filled($key)) {
                     $val = $request->input($key);
                     if (is_array($val)) {
@@ -236,83 +307,6 @@ class ProductUgcVideoController extends Controller
                 }
             }
 
-            // 3. Process uploaded reference image files
-            $uploadedFiles = [];
-            if ($request->hasFile('images')) {
-                $files = $request->file('images');
-                $uploadedFiles = is_array($files) ? $files : [$files];
-            } elseif ($request->hasFile('image')) {
-                $files = $request->file('image');
-                $uploadedFiles = is_array($files) ? $files : [$files];
-            }
-
-            foreach ($uploadedFiles as $file) {
-                if ($file && $file->isValid()) {
-                    $mime = $file->getMimeType() ?: 'image/jpeg';
-                    $content = file_get_contents($file->getRealPath());
-                    if ($content !== false && ! empty($content)) {
-                        $imageParts[] = [
-                            'type' => 'image',
-                            'mime_type' => $mime,
-                            'data' => base64_encode($content),
-                        ];
-
-                        if ($thumbnailFileName === null) {
-                            $ext = $file->getClientOriginalExtension() ?: 'jpg';
-                            $thumbnailFileName = "{$uuid}_thumb.{$ext}";
-                            Storage::disk('public')->put("ugc-videos/{$thumbnailFileName}", $content);
-                        }
-                    }
-                }
-            }
-
-            // 4. Process reference image URLs
-            $rawUrls = [];
-            foreach (['image_urls', 'image_url'] as $key) {
-                if ($request->filled($key)) {
-                    $val = $request->input($key);
-                    if (is_array($val)) {
-                        $rawUrls = array_merge($rawUrls, $val);
-                    } elseif (is_string($val)) {
-                        $decoded = json_decode($val, true);
-                        if (is_array($decoded)) {
-                            $rawUrls = array_merge($rawUrls, $decoded);
-                        } else {
-                            $rawUrls = array_merge($rawUrls, array_map('trim', explode(',', $val)));
-                        }
-                    }
-                }
-            }
-
-            foreach (array_unique(array_filter($rawUrls)) as $url) {
-                if (is_string($url) && filter_var($url, FILTER_VALIDATE_URL)) {
-                    try {
-                        $res = Http::withHeaders([
-                            'User-Agent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                            'Accept' => 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-                        ])->timeout(15)->get($url);
-
-                        if ($res->successful() && ! empty($res->body())) {
-                            $mime = explode(';', $res->header('Content-Type') ?: 'image/jpeg')[0];
-                            $body = $res->body();
-
-                            $imageParts[] = [
-                                'type' => 'image',
-                                'mime_type' => $mime,
-                                'data' => base64_encode($body),
-                            ];
-
-                            if ($thumbnailFileName === null) {
-                                $thumbnailFileName = "{$uuid}_thumb.jpg";
-                                Storage::disk('public')->put("ugc-videos/{$thumbnailFileName}", $body);
-                            }
-                        }
-                    } catch (Throwable $e) {
-                        Log::warning("Failed to fetch reference image from URL {$url}: ".$e->getMessage());
-                    }
-                }
-            }
-
             // Ensure at least one context input is provided
             if (empty($title) && empty($description) && empty($promptOverride) && empty($imageParts) && empty($videoParts)) {
                 throw ValidationException::withMessages([
@@ -321,73 +315,96 @@ class ProductUgcVideoController extends Controller
             }
 
             $productName = $title ?: 'Product';
-            $productDesc = $description ?: '';
             $hasVideo = ! empty($videoParts);
+            $hasImages = ! empty($imageParts);
 
-            // 5. Construct Primary UGC Video Prompt (Optimized for enhancement when video is provided)
+            // ── 3. Construct Context-Aware, High-Fidelity Prompt ──
+            $directives = [];
+
+            // A. Primary Product Name & Subject
+            if (! empty($title)) {
+                $directives[] = "PRIMARY PRODUCT FOCUS: This commercial video is specifically created to promote and showcase '{$title}'. The product '{$title}' must be the primary, central subject of the video.";
+            }
+
+            // B. Product Details / Description
+            if (! empty($description)) {
+                $directives[] = "PRODUCT CONTEXT & SELLING POINTS: {$description}.";
+            }
+
+            // C. User Custom Instructions (Top Creative Priority)
+            if (! empty($promptOverride)) {
+                $cleanOverride = $this->sanitizePrompt($promptOverride);
+                $directives[] = "USER'S CREATIVE INSTRUCTIONS (MUST FOLLOW): {$cleanOverride}.";
+            }
+
+            // D. Attached Product Image Directive
+            if ($hasImages) {
+                $directives[] = "CRITICAL PRODUCT IMAGE REFERENCE: Attached image(s) show the exact product to feature. The video MUST prominently display this exact product, matching its design, appearance, branding, color, and packaging. Ensure the presenter clearly displays, holds, or demonstrates this specific product.";
+            }
+
+            // E. Attached Video Directive
             if ($hasVideo) {
-                if (! empty($promptOverride)) {
-                    $cleanOverride = $this->sanitizePrompt($promptOverride);
-                    $prompt = "{$cleanOverride}. "
-                        . "Enhance, polish, and transform the provided user video into an engaging, high-converting vertical {$aspectRatio} UGC (User-Generated Content) video for '{$productName}'. "
-                        . (! empty($productDesc) ? "Product Details: {$productDesc}. " : '')
-                        . "CRITICAL: Elevate the visual clarity, lighting, color grading, and dynamic motion while keeping the featured product authentic and prominent. "
-                        . "Format: Vertical {$aspectRatio} video, cinematic high quality, realistic motion, brand-safe. Duration: {$duration} seconds.";
+                if (! empty($title) || $hasImages) {
+                    $directives[] = "VIDEO FOOTAGE INTEGRATION: A reference video clip is provided. Use the human presenter, action, energy, natural motion, and aesthetic environment from the reference video, but seamlessly integrate and feature the primary product ('{$productName}') into the scene so the commercial is centered around '{$productName}'.";
                 } else {
-                    $prompt = "Transform, enhance, and elevate the provided user video into a high-converting, professional vertical {$aspectRatio} UGC (User-Generated Content) product commercial for '{$productName}'. "
-                        . (! empty($productDesc) ? "Description: {$productDesc}. " : '')
-                        . "Enhancements to apply: Upgrade video clarity and studio lighting, enrich color grading and vibrancy, stabilize and smooth camera motion, make pacing dynamic and engaging, add subtle cinematic commercial flair, and ensure the product looks premium and appealing. "
-                        . "Style: Viral social media UGC product showcase (TikTok, Instagram Reels), authentic yet polished, pristine aesthetic presentation. Duration: {$duration} seconds.";
-                }
-            } else {
-                if (! empty($promptOverride)) {
-                    $cleanOverride = $this->sanitizePrompt($promptOverride);
-                    $prompt = "{$cleanOverride}. ";
-                    if (! empty($title)) {
-                        $prompt .= "Featuring product: '{$title}'. ";
-                    }
-                    if (! empty($description)) {
-                        $prompt .= "Product Details: {$description}. ";
-                    }
-                    $prompt .= "Format: Vertical {$aspectRatio} video, cinematic high quality, realistic motion, brand-safe. Duration: {$duration} seconds.";
-                } else {
-                    $prompt = "Create a high-energy, vertical {$aspectRatio} UGC (User-Generated Content) product commercial video for '{$productName}'. ";
-                    if (! empty($productDesc)) {
-                        $prompt .= "Description: {$productDesc}. ";
-                    }
-                    $prompt .= "Style: Authentic social media product showcase, clean aesthetic lighting, dynamic product movements, close-up lifestyle shots, cinematic and engaging. Duration: {$duration} seconds.";
+                    $directives[] = "VIDEO ENHANCEMENT: Enhance and elevate the provided reference video into a high-converting, viral social media commercial video. Upgrade the lighting, colors, sharpness, and motion dynamics to look like a high-end commercial.";
                 }
             }
 
-            $mediaParts = array_merge($videoParts, $imageParts);
+            // F. Production Quality & Format
+            $directives[] = "FORMAT & QUALITY: Vertical {$aspectRatio} UGC (User-Generated Content) e-commerce advertisement for TikTok, Instagram Reels, and YouTube Shorts. Dynamic hook, engaging pacing, crisp 4K commercial lighting, vibrant colors, brand-safe, and realistic motion.";
+
+            $directives[] = "DURATION: Exactly {$duration} seconds.";
+
+            $prompt = implode(' ', $directives);
+
+            Log::info("Generating UGC video for '{$productName}' with prompt: {$prompt}", [
+                'has_video' => $hasVideo,
+                'has_images' => $hasImages,
+                'duration' => $duration,
+                'aspect_ratio' => $aspectRatio,
+            ]);
+
+            // ── 4. Assemble Multimodal Payload in Optimal Order ──
+            // Reference media parts first (images then video), followed by instructional text prompt
+            $primaryPayload = array_merge($imageParts, $videoParts, [['type' => 'text', 'text' => $prompt]]);
             $videoBase64 = null;
 
             // ── ATTEMPT 1: Primary prompt + uploaded video / reference images ──
-            $primaryPayload = array_merge($mediaParts, [['type' => 'text', 'text' => $prompt]]);
             $response1 = $this->callGeminiVideoApi($apiKey, $primaryPayload);
 
             if ($response1['success']) {
                 $videoBase64 = $this->extractVideoBase64($response1['data']);
             }
 
-            // ── ATTEMPT 2: Safe Commercial Fallback + media ──────────────────
+            // ── ATTEMPT 2: Safe Commercial Fallback with Preserved Context ─────
             if (empty($videoBase64)) {
-                Log::warning('First UGC video attempt failed or was blocked by safety. Falling back to safe commercial prompt.', [
+                Log::warning('First UGC video attempt failed or was blocked by safety. Falling back to safe commercial prompt with preserved context.', [
                     'error' => $response1['error'] ?? 'No video payload',
                     'original_prompt' => $prompt,
                 ]);
 
-                if ($hasVideo) {
-                    $safeFallbackPrompt = "Commercial product advertisement video enhancing '{$productName}'. "
-                        . (! empty($productDesc) ? "Product Details: {$productDesc}. " : '')
-                        . "Style: Sparkling clean lighting, smooth camera movement, aesthetic tabletop presentation, high quality commercial grade, family-friendly. Duration: {$duration} seconds.";
-                } else {
-                    $safeFallbackPrompt = "Create a high-end, vertical {$aspectRatio} commercial product advertisement video showcasing '{$productName}'. "
-                        . (! empty($productDesc) ? "Product Details: {$productDesc}. " : '')
-                        . "Style: Sparkling clean studio lighting, smooth rotational product view, aesthetic tabletop presentation, commercial grade, family-friendly. Duration: {$duration} seconds.";
+                $fallbackDirectives = [];
+                if (! empty($title)) {
+                    $fallbackDirectives[] = "Commercial advertisement video specifically showcasing '{$title}'.";
                 }
+                if (! empty($description)) {
+                    $fallbackDirectives[] = "Product details: {$description}.";
+                }
+                if (! empty($promptOverride)) {
+                    $fallbackDirectives[] = "Creative direction: {$this->sanitizePrompt($promptOverride)}.";
+                }
+                if ($hasImages) {
+                    $fallbackDirectives[] = "Featuring the product shown in the attached reference image.";
+                }
+                if ($hasVideo) {
+                    $fallbackDirectives[] = "Incorporating the presenter, movement, and scene from the reference video.";
+                }
+                $fallbackDirectives[] = "Style: Sparkling clean studio lighting, smooth camera movement, aesthetic tabletop and lifestyle presentation, commercial grade, family-friendly. Vertical {$aspectRatio}, duration: {$duration} seconds.";
 
-                $fallbackPayload = array_merge($mediaParts, [['type' => 'text', 'text' => $safeFallbackPrompt]]);
+                $safeFallbackPrompt = implode(' ', $fallbackDirectives);
+
+                $fallbackPayload = array_merge($imageParts, $videoParts, [['type' => 'text', 'text' => $safeFallbackPrompt]]);
                 $response2 = $this->callGeminiVideoApi($apiKey, $fallbackPayload);
 
                 if ($response2['success']) {
@@ -402,7 +419,7 @@ class ProductUgcVideoController extends Controller
                 ]);
 
                 $bulletproofPrompt = "Cinematic 9:16 vertical commercial advertisement showcase for '{$productName}'. "
-                    . (! empty($productDesc) ? "Description: {$productDesc}. " : '')
+                    . (! empty($description) ? "Description: {$description}. " : '')
                     . "Pristine lighting, macro product close-up details, smooth camera glide, vibrant colors, premium commercial presentation. Duration: {$duration} seconds.";
 
                 $attempt3Parts = ! empty($imageParts)
@@ -422,7 +439,7 @@ class ProductUgcVideoController extends Controller
                 throw new \RuntimeException('Failed to generate UGC video: '.$lastError);
             }
 
-            // 6. Save generated improved video to public storage
+            // ── 5. Save generated improved video to public storage ──
             $videoBytes = base64_decode($videoBase64);
             $videoFileName = "{$uuid}.mp4";
             Storage::disk('public')->put("ugc-videos/{$videoFileName}", $videoBytes);
