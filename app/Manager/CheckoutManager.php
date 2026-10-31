@@ -85,6 +85,22 @@ class CheckoutManager
                 throw new \Exception('No valid items selected for checkout.', 422);
             }
 
+            // Validate that every product has sufficient stock before checkout
+            foreach ($cartItems as $item) {
+                if ($item->product_id) {
+                    $product = $item->product ?? Product::find($item->product_id);
+                    if ($product && $product->stock_quantity !== null) {
+                        $stock = (int) $product->stock_quantity;
+                        if ($stock <= 0) {
+                            throw new \Exception("Product '{$product->title}' is out of stock.", 422);
+                        }
+                        if ($stock < (int) $item->quantity) {
+                            throw new \Exception("Product '{$product->title}' has insufficient stock ({$stock} available, requested {$item->quantity}).", 422);
+                        }
+                    }
+                }
+            }
+
             $profileId = (int) $this->profileId();
 
             // Validate requested shipping method if provided
@@ -853,8 +869,13 @@ class CheckoutManager
         }
 
         foreach ($cartItems as $ci) {
-            if ($ci->product && (int) ($ci->product->stock_quantity ?? 0) < $ci->quantity) {
-                $warnings[] = "Product '{$ci->product->title}' has insufficient stock ({$ci->product->stock_quantity} available, requested {$ci->quantity}).";
+            if ($ci->product && $ci->product->stock_quantity !== null) {
+                $stock = (int) $ci->product->stock_quantity;
+                if ($stock <= 0) {
+                    $warnings[] = "Product '{$ci->product->title}' is out of stock.";
+                } elseif ($stock < $ci->quantity) {
+                    $warnings[] = "Product '{$ci->product->title}' has insufficient stock ({$stock} available, requested {$ci->quantity}).";
+                }
             }
         }
 

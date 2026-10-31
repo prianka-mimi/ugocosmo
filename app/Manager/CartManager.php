@@ -43,9 +43,14 @@ class CartManager
 
             $requestedQty = max(1, (int) ($data['quantity'] ?? 1));
 
-            // Inventory validation: reject if requested quantity exceeds available stock
-            if ($product->stock_quantity !== null && (int) $product->stock_quantity < $requestedQty) {
-                throw new \Exception("Product '{$product->title}' has insufficient stock ({$product->stock_quantity} available, requested {$requestedQty}).", 422);
+            // Inventory validation: reject if product is out of stock or requested quantity exceeds available stock
+            if ($product->stock_quantity !== null) {
+                if ((int) $product->stock_quantity <= 0) {
+                    throw new \Exception("Product '{$product->title}' is out of stock.", 422);
+                }
+                if ((int) $product->stock_quantity < $requestedQty) {
+                    throw new \Exception("Product '{$product->title}' has insufficient stock ({$product->stock_quantity} available, requested {$requestedQty}).", 422);
+                }
             }
 
             $existing = $cart->items()
@@ -163,6 +168,19 @@ class CartManager
         if ($quantity <= 0) {
             $item->delete();
             throw new \Exception('Item removed from cart', 422);
+        }
+
+        if ($item->product_id) {
+            $product = $item->product ?? Product::find($item->product_id);
+            if ($product && $product->stock_quantity !== null) {
+                $stock = (int) $product->stock_quantity;
+                if ($stock <= 0) {
+                    throw new \Exception("Product '{$product->title}' is out of stock.", 422);
+                }
+                if ($stock < $quantity) {
+                    throw new \Exception("Product '{$product->title}' has insufficient stock ({$stock} available, requested {$quantity}).", 422);
+                }
+            }
         }
 
         $item->update(['quantity' => $quantity]);

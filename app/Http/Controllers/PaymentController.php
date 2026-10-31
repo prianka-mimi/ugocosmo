@@ -28,6 +28,26 @@ class PaymentController extends Controller
             $user = $request->user();
             $order = $request->getOrder();
 
+            // Inventory check: ensure items are not out of stock
+            $order->loadMissing('items.product');
+            foreach ($order->items as $item) {
+                if ($item->product_id && $item->product && $item->product->stock_quantity !== null) {
+                    $stock = (int) $item->product->stock_quantity;
+                    if ($stock <= 0) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => "Product '{$item->product->title}' is out of stock.",
+                        ], 422);
+                    }
+                    if ($stock < (int) $item->quantity) {
+                        return response()->json([
+                            'success' => false,
+                            'message' => "Product '{$item->product->title}' has insufficient stock ({$stock} available, requested {$item->quantity}).",
+                        ], 422);
+                    }
+                }
+            }
+
             // Check if there is an existing pending payment intent for this order to reuse
             $existingPayment = Payment::where('order_id', $order->id)
                 ->where('payment_status', 'pending')
@@ -139,6 +159,28 @@ class PaymentController extends Controller
                     'status_message' => 'This order has been cancelled and cannot be paid.',
                     'data' => ['order_id' => $order->id, 'order_status' => $order->status],
                 ], 422);
+            }
+
+            // Inventory check: ensure items are not out of stock before generating payment
+            $order->loadMissing('items.product');
+            foreach ($order->items as $item) {
+                if ($item->product_id && $item->product && $item->product->stock_quantity !== null) {
+                    $stock = (int) $item->product->stock_quantity;
+                    if ($stock <= 0) {
+                        return response()->json([
+                            'status' => false,
+                            'status_code' => 422,
+                            'status_message' => "Product '{$item->product->title}' is out of stock.",
+                        ], 422);
+                    }
+                    if ($stock < (int) $item->quantity) {
+                        return response()->json([
+                            'status' => false,
+                            'status_code' => 422,
+                            'status_message' => "Product '{$item->product->title}' has insufficient stock ({$stock} available, requested {$item->quantity}).",
+                        ], 422);
+                    }
+                }
             }
 
             $paymentIntentId = $order->stripe_payment_intent_id;

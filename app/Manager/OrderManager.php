@@ -2,8 +2,14 @@
 
 namespace App\Manager;
 
+use App\Enums\InventoryTransactionType;
+use App\Models\Cart;
+use App\Models\CartItem;
 use App\Models\EscrowPayment;
+use App\Models\InventoryTransaction;
 use App\Models\Order;
+use App\Models\Product;
+use App\Models\Transaction;
 use App\Services\InventoryService;
 use App\Services\OrderTimelineService;
 use App\Services\StripeService;
@@ -19,7 +25,7 @@ class OrderManager
      * the buyer refund and return lifecycle).
      */
     public const ALLOWED_TRANSITIONS = [
-        'pending' => ['confirmed', 'cancelled'],
+        'pending' => ['confirmed', 'processing', 'cancelled'],
         'confirmed' => ['processing', 'cancelled', 'awaiting_purchase', 'refund_requested', 'refunded'],
         'awaiting_purchase' => ['purchased', 'cancelled'],
         'purchased' => ['stock_received', 'cancelled'],
@@ -47,6 +53,7 @@ class OrderManager
         protected InventoryService $inventory,
         protected EscrowManager $escrowManager,
         protected StripeService $stripe,
+        protected WalletManager $walletManager,
     ) {
         $this->notificationManager = $notificationManager;
         $this->timeline = $timeline;
@@ -200,11 +207,19 @@ class OrderManager
         DB::transaction(function () use ($order, $status, $currentStatus, $actorProfileId, $actorRole, $notes, $metadata) {
             $order->update(['status' => $status]);
 
+            // Atomically deduct inventory when order enters processing/completed if not already deducted
+            if (in_array($status, ['processing', 'completed']) && ! in_array($currentStatus, ['processing', 'shipped', 'delivered', 'completed'], true)) {
+                $this->decrementStockForPaidOrder($order);
+            }
+
             // Update transaction status when order completes, cancels, or refunds
             if (in_array($status, ['completed', 'delivered'])) {
                 $order->transaction()?->update(['status' => 'completed']);
             } elseif (in_array($status, ['cancelled', 'refunded'])) {
                 $order->transaction()?->update(['status' => $status]);
+
+                // Restore deducted stock if order was paid and stock was deducted
+                $this->restoreDeductedStock($order, $actorProfileId);
 
                 // Release stock reservations — but only before shipment. A
                 // shipped order's goods have physically left the seller, its
@@ -232,6 +247,253 @@ class OrderManager
                 array_merge(['from' => $currentStatus], $metadata ?? [])
             );
         });
+    }
+
+    /**
+     * Mark an order as paid, deduct purchased product inventory atomically,
+     * credit seller wallet / escrow, clear cart items, and move status to processing.
+     */
+    public function markAsPaid(Order $order, ?string $paymentIntentId = null): Order
+    {
+        return DB::transaction(function () use ($order, $paymentIntentId) {
+            $lockedOrder = Order::whereKey($order->id)->lockForUpdate()->first();
+            if (! $lockedOrder) {
+                return $order;
+            }
+
+            // If already processed or completed, do not double-process
+            if (in_array($lockedOrder->status, ['processing', 'shipped', 'delivered', 'completed'], true)) {
+                return $lockedOrder;
+            }
+
+            $lockedOrder->loadMissing('items.product');
+
+            // 1. Atomically deduct inventory for products purchased
+            $this->decrementStockForPaidOrder($lockedOrder);
+
+            // 2. Update order status to processing
+            $lockedOrder->update([
+                'status' => 'processing',
+                'stripe_payment_intent_id' => $paymentIntentId ?? $lockedOrder->stripe_payment_intent_id,
+            ]);
+
+            // 3. Update transaction record
+            $transaction = Transaction::where('order_id', $lockedOrder->id)->first();
+            if ($transaction) {
+                $transaction->update([
+                    'status' => 'completed',
+                    'stripe_payment_id' => $paymentIntentId ?? $lockedOrder->stripe_payment_intent_id,
+                ]);
+            }
+
+            // 4. AliExpress Escrow or Local Order Seller Wallet Credit
+            if ($lockedOrder->isAliExpressFulfilled()) {
+                $existingEscrow = EscrowPayment::where('order_id', $lockedOrder->id)->first();
+                if (! $existingEscrow) {
+                    try {
+                        $this->escrowManager->createFromOrder($lockedOrder);
+                        Log::info("Escrow created and held for AliExpress order #{$lockedOrder->id}.");
+                    } catch (\Throwable $escrowEx) {
+                        Log::error("Failed to create escrow for AliExpress order #{$lockedOrder->id}: ".$escrowEx->getMessage());
+                    }
+                }
+            } else {
+                try {
+                    $this->walletManager->creditSellerOrderEarnings($lockedOrder);
+                    Log::info("Seller wallet credited with net earnings for local order #{$lockedOrder->id}.");
+                } catch (\Throwable $walletEx) {
+                    Log::error("Failed to credit seller wallet for order #{$lockedOrder->id}: ".$walletEx->getMessage());
+                }
+            }
+
+            // 5. Clear buyer's cart items for paid products
+            try {
+                $cart = Cart::where('user_id', $lockedOrder->buyer_id)->first();
+                if ($cart) {
+                    $paidProductIds = $lockedOrder->items->pluck('product_id')->filter()->toArray();
+                    if (! empty($paidProductIds)) {
+                        CartItem::where('cart_id', $cart->id)
+                            ->whereIn('product_id', $paidProductIds)
+                            ->delete();
+                    }
+                }
+            } catch (\Throwable $cartEx) {
+                Log::warning("Cart clear failed after payment for order #{$lockedOrder->id}: ".$cartEx->getMessage());
+            }
+
+            // 6. Record timeline event
+            $this->timeline->record(
+                $lockedOrder,
+                'processing',
+                (int) $lockedOrder->buyer_id,
+                OrderTimelineService::ACTOR_BUYER,
+                "Payment successfully completed. Order moved to processing.",
+                ['payment_intent_id' => $paymentIntentId ?? $lockedOrder->stripe_payment_intent_id]
+            );
+
+            // 7. Dispatch notification
+            $this->notificationManager->dispatch(
+                (int) $lockedOrder->buyer_id,
+                'store.order_paid',
+                'Payment Received',
+                "Your payment for order #{$lockedOrder->id} was successful and is now being processed.",
+                ['order_id' => $lockedOrder->id, 'status' => 'processing']
+            );
+
+            return $lockedOrder->fresh();
+        });
+    }
+
+    /**
+     * Atomically deduct stock quantity for all products purchased in an order.
+     * Guarantees idempotency via InventoryTransaction audit tracking.
+     */
+    public function decrementStockForPaidOrder(Order $order): void
+    {
+        $order->loadMissing('items.product');
+
+        // Check if stock was already decremented for this order to guarantee idempotency
+        $alreadyDeducted = InventoryTransaction::where('reference_type', 'order')
+            ->where('reference_id', $order->id)
+            ->where('type', InventoryTransactionType::Sale->value)
+            ->exists();
+
+        if ($alreadyDeducted) {
+            return;
+        }
+
+        foreach ($order->items as $item) {
+            if (! $item->product_id) {
+                continue;
+            }
+
+            $product = Product::whereKey($item->product_id)->lockForUpdate()->first();
+            if (! $product) {
+                continue;
+            }
+
+            $qty = max(1, (int) $item->quantity);
+            $stockBefore = (int) $product->stock_quantity;
+            $stockAfter = max(0, $stockBefore - $qty);
+
+            $product->stock_quantity = $stockAfter;
+
+            // Decrement variant option stock if variants exist
+            if (! empty($product->product_variants) && is_array($product->product_variants)) {
+                $variants = $product->product_variants;
+                $variantsUpdated = false;
+
+                foreach ($variants as &$variant) {
+                    if (! empty($variant['options']) && is_array($variant['options'])) {
+                        foreach ($variant['options'] as &$opt) {
+                            $matches = false;
+                            if (! empty($item->product_variant_name) && isset($opt['value']) && strcasecmp((string) $opt['value'], (string) $item->product_variant_name) === 0) {
+                                $matches = true;
+                            } elseif (count($variant['options']) === 1 && (isset($opt['stockQuantity']) || isset($opt['stock']))) {
+                                $matches = true;
+                            }
+
+                            if ($matches) {
+                                if (isset($opt['stockQuantity'])) {
+                                    $opt['stockQuantity'] = (string) max(0, ((int) $opt['stockQuantity']) - $qty);
+                                    $variantsUpdated = true;
+                                }
+                                if (isset($opt['stock'])) {
+                                    $opt['stock'] = (string) max(0, ((int) $opt['stock']) - $qty);
+                                    $variantsUpdated = true;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if ($variantsUpdated) {
+                    $product->product_variants = $variants;
+                }
+            }
+
+            $product->save();
+
+            try {
+                InventoryTransaction::create([
+                    'product_id' => $product->id,
+                    'seller_id' => $product->seller_id,
+                    'aliexpress_account_id' => $product->aliexpress_account_id,
+                    'type' => InventoryTransactionType::Sale->value,
+                    'quantity' => -$qty,
+                    'stock_before' => $stockBefore,
+                    'stock_after' => $stockAfter,
+                    'reserved_before' => (int) $product->reserved_quantity,
+                    'reserved_after' => (int) $product->reserved_quantity,
+                    'reference_type' => 'order',
+                    'reference_id' => $order->id,
+                    'notes' => "Stock decreased by {$qty} for paid order #{$order->id}",
+                    'created_by' => $order->buyer_id,
+                ]);
+            } catch (\Throwable $invEx) {
+                Log::warning("Could not record inventory transaction for product #{$product->id}: {$invEx->getMessage()}");
+            }
+        }
+    }
+
+    /**
+     * Restore deducted stock if an order that was previously paid is cancelled or refunded.
+     */
+    protected function restoreDeductedStock(Order $order, int $actorProfileId): void
+    {
+        $sales = InventoryTransaction::where('reference_type', 'order')
+            ->where('reference_id', $order->id)
+            ->where('type', InventoryTransactionType::Sale->value)
+            ->get();
+
+        if ($sales->isEmpty()) {
+            return;
+        }
+
+        // Avoid double-restock
+        $alreadyRestocked = InventoryTransaction::where('reference_type', 'order')
+            ->where('reference_id', $order->id)
+            ->where('type', InventoryTransactionType::Adjustment->value)
+            ->where('notes', 'like', '%Restocked from cancelled order%')
+            ->exists();
+
+        if ($alreadyRestocked) {
+            return;
+        }
+
+        foreach ($sales as $sale) {
+            $product = Product::whereKey($sale->product_id)->lockForUpdate()->first();
+            if (! $product) {
+                continue;
+            }
+
+            $qty = abs((int) $sale->quantity);
+            $stockBefore = (int) $product->stock_quantity;
+            $stockAfter = $stockBefore + $qty;
+
+            $product->stock_quantity = $stockAfter;
+            $product->save();
+
+            try {
+                InventoryTransaction::create([
+                    'product_id' => $product->id,
+                    'seller_id' => $product->seller_id,
+                    'aliexpress_account_id' => $product->aliexpress_account_id,
+                    'type' => InventoryTransactionType::Adjustment->value,
+                    'quantity' => $qty,
+                    'stock_before' => $stockBefore,
+                    'stock_after' => $stockAfter,
+                    'reserved_before' => (int) $product->reserved_quantity,
+                    'reserved_after' => (int) $product->reserved_quantity,
+                    'reference_type' => 'order',
+                    'reference_id' => $order->id,
+                    'notes' => "Restocked from cancelled order #{$order->id}",
+                    'created_by' => $actorProfileId,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning("Could not restore stock for product #{$product->id}: {$e->getMessage()}");
+            }
+        }
     }
 
     /**
@@ -576,6 +838,9 @@ class OrderManager
             EscrowPayment::where('order_id', $order->id)
                 ->whereIn('status', ['held', 'pending', 'disputed'])
                 ->update(['status' => 'cancelled', 'payout_reference' => 'CANCELLED']);
+
+            // Restore deducted stock if order was paid
+            $this->restoreDeductedStock($order, $actorProfileId);
 
             // Release stock reservations if pre-ship
             if (! in_array($order->getOriginal('status'), ['shipped', 'delivered', 'completed'], true)) {

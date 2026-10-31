@@ -104,6 +104,19 @@ class OrderController extends Controller
                 abort(403, 'Unauthorized to view this order confirmation.');
             }
 
+            // If order is still pending, verify with Stripe to handle client-side completion immediately
+            if ($order->status === 'pending' && $order->stripe_payment_intent_id) {
+                try {
+                    $intent = app(\App\Services\StripePaymentIntentService::class)->retrievePaymentIntent($order->stripe_payment_intent_id);
+                    if (in_array($intent->status, ['succeeded', 'processing'], true)) {
+                        $this->orderManager->markAsPaid($order, $intent->id);
+                        $order = $order->fresh();
+                    }
+                } catch (\Throwable $stripeEx) {
+                    Log::warning("Stripe PaymentIntent check skipped in confirmation: " . $stripeEx->getMessage());
+                }
+            }
+
             $order->load(['items.product', 'items.service', 'items.event', 'transaction']);
 
             $this->data = new \App\Http\Resources\OrderConfirmationResource($order);

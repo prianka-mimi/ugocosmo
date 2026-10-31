@@ -12,10 +12,11 @@ enum InventoryTransactionType: string
     case Reserve = 'reserve';       // stock set aside for a confirmed order
     case Release = 'release';       // reservation removed (order cancelled)
     case Ship = 'ship';             // stock out (seller shipped the order)
+    case Sale = 'sale';             // stock decreased after customer purchase
 
     public function affectsStock(): bool
     {
-        return in_array($this, [self::Receive, self::Adjustment, self::Ship], true);
+        return in_array($this, [self::Receive, self::Adjustment, self::Ship, self::Sale], true);
     }
 
     public function affectsReserved(): bool

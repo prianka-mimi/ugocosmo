@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Manager\EscrowManager;
+use App\Manager\OrderManager;
 use App\Manager\WalletManager;
 use App\Models\Cart;
 use App\Models\CartItem;
@@ -28,11 +29,18 @@ class StripeWebhookController extends Controller
 
     protected WalletManager $walletManager;
 
-    public function __construct(StripeService $stripeService, EscrowManager $escrowManager, WalletManager $walletManager)
-    {
+    protected OrderManager $orderManager;
+
+    public function __construct(
+        StripeService $stripeService,
+        EscrowManager $escrowManager,
+        WalletManager $walletManager,
+        OrderManager $orderManager
+    ) {
         $this->stripeService = $stripeService;
         $this->escrowManager = $escrowManager;
         $this->walletManager = $walletManager;
+        $this->orderManager = $orderManager;
     }
 
     /**
@@ -103,61 +111,14 @@ class StripeWebhookController extends Controller
                 } elseif ($type === 'order_payment') {
                     $orderIdsString = $metadata->order_ids ?? $metadata->order_id ?? '';
                     $orderIds = array_filter(explode(',', $orderIdsString));
+                    $paymentId = (string) ($session->payment_intent ?? $session->id);
 
                     foreach ($orderIds as $orderId) {
                         $order = Order::find($orderId);
 
                         if ($order && $order->status === 'pending') {
-                            $order->update([
-                                'status' => 'processing',
-                                'stripe_payment_intent_id' => $session->payment_intent ?? $session->id,
-                            ]);
-
-                            // Update the transaction related to this order
-                            $transaction = Transaction::where('order_id', $order->id)->first();
-                            if ($transaction) {
-                                $transaction->update([
-                                    'status' => 'completed',
-                                    'stripe_payment_id' => $session->payment_intent ?? $session->id,
-                                ]);
-                            }
-
-                            // ── AliExpress Escrow or Local Order Seller Wallet Credit ──
-                            if ($order->isAliExpressFulfilled()) {
-                                $existingEscrow = EscrowPayment::where('order_id', $order->id)->first();
-                                if (! $existingEscrow) {
-                                    try {
-                                        $this->escrowManager->createFromOrder($order);
-                                        Log::info("Escrow created and held for AliExpress order #{$order->id}.");
-                                    } catch (\Throwable $escrowEx) {
-                                        Log::error("Failed to create escrow for AliExpress order #{$order->id}: ".$escrowEx->getMessage());
-                                    }
-                                }
-                            } else {
-                                try {
-                                    $this->walletManager->creditSellerOrderEarnings($order);
-                                    Log::info("Seller wallet credited with net earnings for local order #{$order->id}.");
-                                } catch (\Throwable $walletEx) {
-                                    Log::error("Failed to credit seller wallet for order #{$order->id}: ".$walletEx->getMessage());
-                                }
-                            }
-
-                            // ── Clear buyer's cart after successful payment ────────
-                            try {
-                                $cart = Cart::where('user_id', $order->buyer_id)->first();
-                                if ($cart) {
-                                    $paidProductIds = $order->items->pluck('product_id')->filter()->toArray();
-                                    if (! empty($paidProductIds)) {
-                                        CartItem::where('cart_id', $cart->id)
-                                            ->whereIn('product_id', $paidProductIds)
-                                            ->delete();
-                                    }
-                                }
-                            } catch (\Throwable $cartEx) {
-                                Log::warning("Cart clear failed after payment for order #{$order->id}: ".$cartEx->getMessage());
-                            }
-
-                            Log::info("Order {$orderId} successfully marked as processing.");
+                            $this->orderManager->markAsPaid($order, $paymentId);
+                            Log::info("Order {$orderId} successfully marked as paid and inventory decreased.");
                         } else {
                             Log::warning("Order {$orderId} not found or status is not pending.");
                         }
@@ -245,55 +206,8 @@ class StripeWebhookController extends Controller
                     foreach ($orderIds as $id) {
                         $order = Order::find($id);
                         if ($order && $order->status === 'pending') {
-                            $order->update([
-                                'status' => 'processing',
-                                'stripe_payment_intent_id' => $paymentIntentId,
-                            ]);
-
-                            // Update the transaction related to this order
-                            $transaction = Transaction::where('order_id', $order->id)->first();
-                            if ($transaction) {
-                                $transaction->update([
-                                    'status' => 'completed',
-                                    'stripe_payment_id' => $paymentIntentId,
-                                ]);
-                            }
-
-                            // ── AliExpress Escrow or Local Order Seller Wallet Credit ──
-                            if ($order->isAliExpressFulfilled()) {
-                                $existingEscrow = EscrowPayment::where('order_id', $order->id)->first();
-                                if (! $existingEscrow) {
-                                    try {
-                                        $this->escrowManager->createFromOrder($order);
-                                        Log::info("Escrow created and held for AliExpress order #{$order->id}.");
-                                    } catch (\Throwable $escrowEx) {
-                                        Log::error("Failed to create escrow for AliExpress order #{$order->id}: ".$escrowEx->getMessage());
-                                    }
-                                }
-                            } else {
-                                try {
-                                    $this->walletManager->creditSellerOrderEarnings($order);
-                                    Log::info("Seller wallet credited with net earnings for local order #{$order->id}.");
-                                } catch (\Throwable $walletEx) {
-                                    Log::error("Failed to credit seller wallet for order #{$order->id}: ".$walletEx->getMessage());
-                                }
-                            }
-
-                            // ── Clear buyer's cart after successful payment ────────
-                            // Cart is keyed by profile_id (same as buyer_id on orders)
-                            try {
-                                $cart = Cart::where('user_id', $order->buyer_id)->first();
-                                if ($cart) {
-                                    $paidProductIds = $order->items->pluck('product_id')->filter()->toArray();
-                                    if (! empty($paidProductIds)) {
-                                        CartItem::where('cart_id', $cart->id)
-                                            ->whereIn('product_id', $paidProductIds)
-                                            ->delete();
-                                    }
-                                }
-                            } catch (\Throwable $cartEx) {
-                                Log::warning("Cart clear failed after payment for order #{$order->id}: ".$cartEx->getMessage());
-                            }
+                            $this->orderManager->markAsPaid($order, $paymentIntentId);
+                            Log::info("Order {$id} successfully marked as paid and inventory decreased via PaymentIntent.");
                         }
                     }
 

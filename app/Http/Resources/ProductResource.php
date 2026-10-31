@@ -63,7 +63,9 @@ class ProductResource extends JsonResource
             'price'            => (float) $this->price,
             'compare_at_price' => $this->compare_at_price ? (float) $this->compare_at_price : ($src['original_price'] ?? ($src['original_price_min'] ?? null)),
             'currency'         => $this->currency ?? 'USD',
-            'stock_quantity'   => (int) $this->stock_quantity,
+            'stock_quantity'   => (int) ($this->stock_quantity ?? 0),
+            'is_in_stock'      => ((int) ($this->stock_quantity ?? 0)) > 0,
+            'stock_status'     => ((int) ($this->stock_quantity ?? 0)) > 0 ? 'in_stock' : 'out_of_stock',
             'product_type'     => strtolower((string) ($this->product_type ?? '')) === 'digital' ? 'digital' : 'physical',
             'condition'        => in_array(strtolower((string) ($this->condition ?? '')), ['new', 'used', 'refurbished'], true) ? strtolower((string) $this->condition) : 'new',
             
